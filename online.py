@@ -220,11 +220,6 @@ if not data.empty:
     else:
          col3.warning("Max MQ or Time data not available or empty.")
 
-
-    st.subheader("Hourly Summary")
-    # Display the fetched data as a table
-    st.dataframe(data)
-
     # --- PLOT DATA USING ALTAIR FOR INTERACTIVITY ---
     st.subheader("📈 Energy Metrics Over Time (Interactive)")
 
@@ -305,6 +300,9 @@ if not data.empty:
     else:
         st.warning("Time column is not in the expected datetime format for plotting or data is empty after fetch.")
 
+    st.subheader("Hourly Summary")
+    # Display the fetched data as a table
+    st.dataframe(data)
 
 else:
     st.warning(f"No data available for selected date: {selected_date_str}.")
