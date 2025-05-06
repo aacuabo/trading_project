@@ -120,7 +120,7 @@ if not data.empty:
         # Find the row with the maximum Total_MQ value
         max_mq_value = data["Total_MQ"].max()
         # Check if the column is all NaNs or empty, idxmax would raise an error
-        if pd.notnull(max_mq_value):
+        if pd.notnull(max_mq_value) and not data["Total_MQ"].isnull().all(): # Also check if all values are null
              max_mq_row_index = data["Total_MQ"].idxmax()
              # Get the corresponding Time value from that row
              max_mq_time = data.loc[max_mq_row_index, "Time"]
@@ -135,7 +135,7 @@ if not data.empty:
              col3.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq_value:,.2f}")
              col3.write(f"at {max_mq_time_str}") # Display time below the metric
         else:
-             col3.info("Total_MQ data is all zero or not applicable for max metric.")
+             col3.info("Total_MQ data is all zero/null or not applicable for max metric.")
 
     else:
          col3.warning("Total_MQ or Time data not available or empty for max metric.")
@@ -187,7 +187,8 @@ if not data.empty:
                 # --- Align zero for the energy axis - 'zero=True' goes inside alt.Scale() ---
                 y=alt.Y("Value", title="Energy (kWh)", axis=alt.Axis(titleColor="tab:blue"), scale=alt.Scale(zero=True)),
                 # --- Use a commonly supported colorblind-friendly scheme ---
-                color=alt.Color("Metric", legend=alt.Legend(title="Metric"), scale=alt.Scale(scheme='category10')), # Use 'category10' palette
+                # --- FIX: Move legend to the bottom ---
+                color=alt.Color("Metric", legend=alt.Legend(title="Metric", orient='bottom')), # Use 'category10' palette
                 tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
             ).properties(
                  title="Energy Metrics" # Title for this layer's legend
@@ -199,6 +200,9 @@ if not data.empty:
                 x=alt.X("Time", axis=alt.Axis(title="")), # Empty title as it's shared
                 # --- Align zero for the price axis - 'zero=True' goes inside alt.Scale() ---
                 y=alt.Y("Value", title="Price (PHP/kWh)", axis=alt.Axis(titleColor="tab:red"), scale=alt.Scale(zero=True)),
+                # --- FIX: Move legend to the bottom (if this layer also had a color legend) ---
+                # This layer doesn't have a color legend by default, but if it did, orient='bottom'
+                # would apply. The combined legend is controlled by the first chart's legend encoding.
                 tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
             ).properties(
                  title="Prices" # Title for this layer's legend
