@@ -119,21 +119,24 @@ if not data.empty:
     if "Total_MQ" in data.columns and "Time" in data.columns and not data["Total_MQ"].empty:
         # Find the row with the maximum Total_MQ value
         max_mq_value = data["Total_MQ"].max()
-        max_mq_row_index = data["Total_MQ"].idxmax()
+        # Check if the column is all NaNs or empty, idxmax would raise an error
+        if pd.notnull(max_mq_value):
+             max_mq_row_index = data["Total_MQ"].idxmax()
+             # Get the corresponding Time value from that row
+             max_mq_time = data.loc[max_mq_row_index, "Time"]
 
-        # Get the corresponding Time value from that row
-        max_mq_time = data.loc[max_mq_row_index, "Time"]
+             # Format the time for display
+             if pd.api.types.is_datetime64_any_dtype(max_mq_time):
+                  max_mq_time_str = max_mq_time.strftime("%H:%M")
+             else:
+                  # Handle cases where max_mq_time might not be a datetime object
+                  max_mq_time_str = str(max_mq_time) # Display as string if not datetime
 
-        # Format the time for display
-        if pd.api.types.is_datetime64_any_dtype(max_mq_time):
-             max_mq_time_str = max_mq_time.strftime("%H:%M")
+             col3.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq_value:,.2f}")
+             col3.write(f"at {max_mq_time_str}") # Display time below the metric
         else:
-             # Handle cases where max_mq_time might not be a datetime object
-             max_mq_time_str = str(max_mq_time) # Display as string if not datetime
+             col3.info("Total_MQ data is all zero or not applicable for max metric.")
 
-
-        col3.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq_value:,.2f}")
-        col3.write(f"at {max_mq_time_str}") # Display time below the metric
     else:
          col3.warning("Total_MQ or Time data not available or empty for max metric.")
 
