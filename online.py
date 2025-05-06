@@ -54,7 +54,7 @@ def fetch_available_dates():
         """
         # --- FIX: Use parse_dates to ensure the "Date" column is read as datetime ---
         dates_df = pd.read_sql(query, engine, parse_dates=["Date"])
-        # Convert datetime objects to date objects and then to a list
+        # Convert datetime objects to date objects
         available_dates = dates_df["Date"].dt.date.tolist()
         return available_dates
     except Exception as e:
@@ -77,8 +77,7 @@ def fetch_data(selected_date_str):
         """
         # --- Pass parameters as a list containing a tuple ---
         # This format [(value,)] is often required by database adapters for single positional parameters.
-        # --- FIX: Also parse 'Time' and 'Date' columns as dates in fetch_data for consistency ---
-        # Although 'Time' is handled later, parsing 'Date' here is good practice.
+        # --- FIX: Also parse 'Date' and 'Time' columns as dates in fetch_data for consistency ---
         df = pd.read_sql(query, engine, params=[(selected_date_str,)], parse_dates=["Date", "Time"])
 
 
@@ -97,7 +96,7 @@ def fetch_data(selected_date_str):
 
                 # Combine the selected date (as a string) with the time (ensure it's string)
                 # This is necessary if the database 'Time' column is just time or an interval.
-                df['Time_str'] = df['Time'].astype(str).str.split().str[-1] # Get just the time part as string
+                df['Time_str'] = df['Time'].fillna('').astype(str).str.split().str[-1] # Get just the time part as string
                 df['Datetime'] = pd.to_datetime(selected_date_str + ' ' + df['Time_str'], errors='coerce')
                 # Drop rows where datetime conversion failed
                 df.dropna(subset=['Datetime'], inplace=True)
@@ -175,9 +174,10 @@ if not data.empty:
     # --- Display Daily Summary Metrics as Cards ---
     st.subheader("Daily Summary Metrics")
 
-    # Create three columns for the metrics
-    # Use 5 columns: 2 empty spacers on the sides, 3 for the metrics in the middle
-    # The ratio [1, 1, 1, 1, 1] gives equal width, adjust as needed for centering
+    # --- Removed columns for centering the metrics ---
+    # Create three columns for the metrics using the default layout
+    col1, col2, col3 = st.columns(3)
+
 
     # Display Maximum Price and Average Price in the first two data columns (col1 and col2)
     if "Prices" in data.columns and not data["Prices"].empty:
@@ -218,7 +218,7 @@ if not data.empty:
              col3.info("Total_MQ data is all zero/null or not applicable for max metric.")
 
     else:
-         col3.warning("Total_MQ or Time data not available or empty.")
+         col3.warning("Max MQ or Time data not available or empty.")
 
 
     st.subheader("Hourly Summary")
