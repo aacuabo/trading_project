@@ -65,7 +65,11 @@ def fetch_data(selected_date_str):
             # Combine with the selected date to create full datetime objects
             # Ensure the Time column is treated as string before concatenation
             try:
-                df['Time'] = pd.to_datetime(selected_date_str + ' ' + df['Time'].astype(str))
+                # We need to handle potential None or NaN values in the 'Time' column before astype(str)
+                df['Time'] = df['Time'].fillna('').astype(str)
+                df['Time'] = pd.to_datetime(selected_date_str + ' ' + df['Time'], errors='coerce')
+                # Drop rows where datetime conversion failed
+                df.dropna(subset=['Time'], inplace=True)
             except Exception as e:
                 st.error(f"Error converting 'Time' column to datetime: {e}. Please check the format of the 'Time' column in your database.")
                 return pd.DataFrame() # Return empty DataFrame on error
@@ -111,13 +115,27 @@ if not data.empty:
         col2.warning("Prices data not available.")
 
 
-    # Display Total MQ in the third column
-    if "Total_MQ" in data.columns:
-        # Assuming Total_MQ represents energy quantities that can be summed over the day
-        total_mq_sum = data["Total_MQ"].sum()
-        col3.metric(label="Total MQ (kWh)", value=f"{total_mq_sum:,.2f}") # Format for readability
+    # --- Display Maximum Total MQ and corresponding time in the third column ---
+    if "Total_MQ" in data.columns and "Time" in data.columns and not data["Total_MQ"].empty:
+        # Find the row with the maximum Total_MQ value
+        max_mq_value = data["Total_MQ"].max()
+        max_mq_row_index = data["Total_MQ"].idxmax()
+
+        # Get the corresponding Time value from that row
+        max_mq_time = data.loc[max_mq_row_index, "Time"]
+
+        # Format the time for display
+        if pd.api.types.is_datetime64_any_dtype(max_mq_time):
+             max_mq_time_str = max_mq_time.strftime("%H:%M")
+        else:
+             # Handle cases where max_mq_time might not be a datetime object
+             max_mq_time_str = str(max_mq_time) # Display as string if not datetime
+
+
+        col3.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq_value:,.2f}")
+        col3.write(f"at {max_mq_time_str}") # Display time below the metric
     else:
-         col3.warning("Total_MQ data not available.")
+         col3.warning("Total_MQ or Time data not available or empty for max metric.")
 
 
     st.subheader("Hourly Summary")
