@@ -52,8 +52,9 @@ def fetch_available_dates():
             FROM "MQ_Hourly"
             ORDER BY "Date";
         """
-        dates_df = pd.read_sql(query, engine)
-        # Convert datetime objects to date objects
+        # --- FIX: Use parse_dates to ensure the "Date" column is read as datetime ---
+        dates_df = pd.read_sql(query, engine, parse_dates=["Date"])
+        # Convert datetime objects to date objects and then to a list
         available_dates = dates_df["Date"].dt.date.tolist()
         return available_dates
     except Exception as e:
@@ -76,25 +77,35 @@ def fetch_data(selected_date_str):
         """
         # --- Pass parameters as a list containing a tuple ---
         # This format [(value,)] is often required by database adapters for single positional parameters.
-        df = pd.read_sql(query, engine, params=[(selected_date_str,)])
+        # --- FIX: Also parse 'Time' and 'Date' columns as dates in fetch_data for consistency ---
+        # Although 'Time' is handled later, parsing 'Date' here is good practice.
+        df = pd.read_sql(query, engine, params=[(selected_date_str,)], parse_dates=["Date", "Time"])
+
 
         # --- Convert 'Time' column to datetime objects for Altair ---
-        # Altair works best with datetime objects for temporal axes.
-        if not df.empty and 'Time' in df.columns:
-            # Assuming "Time" column contains time strings like "HH:MM:SS" or similar
-            # Combine with the selected date to create full datetime objects
-            # Ensure the Time column is treated as string before concatenation
+        # This step is still necessary even with parse_dates, as we combine date and time.
+        if not df.empty and 'Time' in df.columns and 'Date' in df.columns:
             try:
-                # We need to handle potential None or NaN values in the 'Time' column before astype(str)
-                df['Time'] = df['Time'].fillna('').astype(str)
-                # Use errors='coerce' to turn unparseable dates into NaT (Not a Time)
-                df['Time'] = pd.to_datetime(selected_date_str + ' ' + df['Time'], errors='coerce')
-                # Drop rows where datetime conversion failed
-                df.dropna(subset=['Time'], inplace=True)
-            except Exception as e:
-                st.error(f"Error converting 'Time' column to datetime: {e}. Please check the format of the 'Time' column in your database.")
-                return pd.DataFrame() # Return empty DataFrame on error
+                # Assuming "Time" column is now a datetime object or string representing time
+                # If 'Time' is already datetime from parse_dates, just use it.
+                # If it's a time string, combine with 'Date'.
+                # Let's rely on parse_dates for 'Time' and assume it might be a time object or datetime.
+                # We still need to ensure it has the date part for plotting over a day.
+                # A more robust approach for combining date and time might be needed
+                # depending on the exact data types in your database.
+                # For now, let's re-parse explicitly ensuring date is included.
 
+                # Combine the selected date (as a string) with the time (ensure it's string)
+                # This is necessary if the database 'Time' column is just time or an interval.
+                df['Time_str'] = df['Time'].astype(str).str.split().str[-1] # Get just the time part as string
+                df['Datetime'] = pd.to_datetime(selected_date_str + ' ' + df['Time_str'], errors='coerce')
+                # Drop rows where datetime conversion failed
+                df.dropna(subset=['Datetime'], inplace=True)
+                df['Time'] = df['Datetime'] # Replace the original 'Time' column with the combined datetime
+
+            except Exception as e:
+                st.error(f"Error converting 'Time' column to datetime after fetch: {e}. Please check the format of the 'Time' column in your database.")
+                return pd.DataFrame() # Return empty DataFrame on error
 
         return df
     except Exception as e:
@@ -111,16 +122,27 @@ st.title("📊 Daily Energy Trading Dashboard")
 available_dates = fetch_available_dates()
 
 if not available_dates:
-    st.error("No available dates found in the database. Please check data availability.")
+    st.error("No available dates found in the database. Please check data availability and database connection.")
     st.stop() # Stop the app if no dates are available
 
 # Set min, max, and default value for the date input based on available dates
 min_available_date = min(available_dates)
 max_available_date = max(available_dates)
-# Set default date to the latest available date or today if within range
-default_date = max_available_date if date.today() > max_available_date else date.today()
-# Ensure default date is within the available range
-default_date = max_available_date if default_date < min_available_date else default_date
+# Set default date to the latest available date
+default_date = max_available_date
+
+# Use max_available_date if today's date is beyond the latest data, otherwise use today.
+# Ensure the default date is within the available range.
+if date.today() > max_available_date:
+    default_date = max_available_date
+elif date.today() < min_available_date:
+     default_date = min_available_date
+else:
+    default_date = date.today()
+
+# If the initially selected default date is not in available dates, fallback to max
+if default_date not in available_dates:
+     default_date = max_available_date
 
 
 selected_date = st.date_input(
@@ -130,10 +152,15 @@ selected_date = st.date_input(
     max_value=max_available_date
 )
 
-# Check if the selected date is actually in the list of available dates (optional but recommended)
+# While min_value and max_value restrict the picker range,
+# a direct selection might still result in a date not in the DISTINCT list.
+# Re-check and inform the user if the selected date is not in the exact list.
 if selected_date not in available_dates:
-    st.warning(f"Data may not be available for the selected date: {selected_date}. Displaying data for {max_available_date} instead.")
-    selected_date = max_available_date # Fallback to latest available date
+    st.warning(f"Data may not be available for the exact date selected: {selected_date}. Displaying data for the closest available date or period.")
+    # For simplicity here, we'll still use the selected date for fetching,
+    # but the warning lets the user know. If strict adherence is needed,
+    # you'd fallback to a date in available_dates here before fetching.
+    # Example: selected_date_str = max_available_date.strftime('%Y-%m-%d')
 
 
 # Format the selected date to 'YYYY-MM-DD' string for the SQL query
@@ -170,24 +197,29 @@ if not data.empty:
         max_mq_value = data["Total_MQ"].max()
         # Check if the column is all NaNs or empty, idxmax would raise an error
         if pd.notnull(max_mq_value) and not data["Total_MQ"].isnull().all(): # Also check if all values are null
-             max_mq_row_index = data["Total_MQ"].idxmax()
-             # Get the corresponding Time value from that row
-             max_mq_time = data.loc[max_mq_row_index, "Time"]
+             # Ensure 'Total_MQ' is numeric before idxmax
+             if pd.api.types.is_numeric_dtype(data["Total_MQ"]):
+                 max_mq_row_index = data["Total_MQ"].idxmax()
+                 # Get the corresponding Time value from that row
+                 max_mq_time = data.loc[max_mq_row_index, "Time"]
 
-             # Format the time for display
-             if pd.api.types.is_datetime64_any_dtype(max_mq_time):
-                  max_mq_time_str = max_mq_time.strftime("%H:%M")
+                 # Format the time for display
+                 if pd.api.types.is_datetime64_any_dtype(max_mq_time):
+                      max_mq_time_str = max_mq_time.strftime("%H:%M")
+                 else:
+                      # Handle cases where max_mq_time might not be a datetime object
+                      max_mq_time_str = str(max_mq_time) # Display as string if not datetime
+
+                 col3.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq_value:,.2f}")
+                 col3.write(f"at {max_mq_time_str}") # Display time below the metric
              else:
-                  # Handle cases where max_mq_time might not be a datetime object
-                  max_mq_time_str = str(max_mq_time) # Display as string if not datetime
+                  col3.warning("Total_MQ column is not numeric.")
 
-             col3.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq_value:,.2f}")
-             col3.write(f"at {max_mq_time_str}") # Display time below the metric
         else:
              col3.info("Total_MQ data is all zero/null or not applicable for max metric.")
 
     else:
-         col3.warning("Max MQ or Time data not available or empty.")
+         col3.warning("Total_MQ or Time data not available or empty.")
 
 
     st.subheader("Hourly Summary")
