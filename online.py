@@ -177,8 +177,7 @@ if not data.empty:
 
     # Create three columns for the metrics
     # Use 5 columns: 2 empty spacers on the sides, 3 for the metrics in the middle
-    # The ratio [1, 1, 1, 1, 1] gives equal width, adjust as needed for centering.
-    col_spacer_left, col1, col2, col3, col_spacer_right = st.columns([1, 1, 1, 1, 1])
+    # The ratio [1, 1, 1, 1, 1] gives equal width, adjust as needed for centering
 
     # Display Maximum Price and Average Price in the first two data columns (col1 and col2)
     if "Prices" in data.columns and not data["Prices"].empty:
