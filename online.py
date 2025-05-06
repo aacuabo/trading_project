@@ -94,21 +94,30 @@ data = fetch_data(selected_date_str)
 
 
 if not data.empty:
-    # --- Display Maximum Price and Total MQ ---
+    # --- Display Daily Summary Metrics as Cards ---
     st.subheader("Daily Summary Metrics")
-    col1, col2 = st.columns(2) # Use columns to display metrics side-by-side
 
-    if "Total_MQ" in data.columns:
-        max_mq = data["Total_MQ"].max()
-        col1.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq:,.2f}") # Display Max MQ in the first column
-    else:
-         col1.warning("Total_MQ column not found for metrics.")
+    # Create three columns for the metrics
+    col1, col2, col3 = st.columns(3)
 
+    # Display Maximum Price and Average Price in the first two columns
     if "Prices" in data.columns:
         max_price = data["Prices"].max()
-        col2.metric(label="Maximum Price (PHP/kWh)", value=f"{max_price:,.2f}") # Display Max Price in the second column
+        avg_price = data["Prices"].mean()
+        col1.metric(label="Maximum Price (PHP/kWh)", value=f"{max_price:,.2f}") # Format for readability
+        col2.metric(label="Average Price (PHP/kWh)", value=f"{avg_price:,.2f}") # Format for readability
     else:
-         col2.warning("Prices column not found for metrics.")
+        col1.warning("Prices data not available.")
+        col2.warning("Prices data not available.")
+
+
+    # Display Total MQ in the third column
+    if "Total_MQ" in data.columns:
+        # Assuming Total_MQ represents energy quantities that can be summed over the day
+        total_mq_sum = data["Total_MQ"].sum()
+        col3.metric(label="Total MQ (kWh)", value=f"{total_mq_sum:,.2f}") # Format for readability
+    else:
+         col3.warning("Total_MQ data not available.")
 
 
     st.subheader("Hourly Summary")
@@ -129,12 +138,12 @@ if not data.empty:
     # Ensure 'Time' is a datetime type before melting
     if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
 
-        # --- !!! IMPORTANT: VERIFY AND UPDATE COLUMN NAMES HERE !!! ---
+        # --- IMPORTANT: VERIFY AND UPDATE COLUMN NAMES HERE if necessary ---
         # The list below must contain the EXACT names of the columns in your
         # 'data' DataFrame that you want to plot (Total_MQ, Total_BCQ, Prices).
-        # Check the output of the "Columns in data DataFrame:" line above
-        # to confirm the actual names returned by your database query.
-        columns_to_melt = ["Total_MQ", "Total_BCQ", "Prices"] # <-- **VERIFY/UPDATE THESE NAMES**
+        # Check the output of the commented-out "st.write" line above if you
+        # are still facing KeyError during melting.
+        columns_to_melt = ["Total_MQ", "Total_BCQ", "Prices"] # <-- **VERIFY/UPDATE THESE NAMES if needed**
 
         # Check if all columns to melt exist in the DataFrame
         if all(col in data.columns for col in columns_to_melt):
@@ -164,7 +173,7 @@ if not data.empty:
             )
 
             # Create chart for the right y-axis (Prices) - as bars
-            # --- Change the color of the price bars to apple green ---
+            # --- Change the color of the price bars to apple green (#40B0A6 is a pleasant shade) ---
             chart_price = alt.Chart(melted_data[melted_data["Metric"] == "Prices"]).mark_bar(color="#40B0A6").encode(
                 x=alt.X("Time", axis=alt.Axis(title="")), # Empty title as it's shared
                 # --- Align zero for the price axis - 'zero=True' goes inside alt.Scale() ---
@@ -186,9 +195,9 @@ if not data.empty:
             # Display the chart in Streamlit
             st.altair_chart(combined_chart, use_container_width=True)
         else:
-            # If columns are missing, display an informative warning
+            # If columns are missing for plotting, display an informative warning
             missing_cols = [col for col in columns_to_melt if col not in data.columns]
-            st.warning(f"Data fetched but required columns for plotting are missing: {missing_cols}. Check your database tables ('MQ_Hourly', 'BCQ_Hourly', 'Prices_Hourly') and SQL query.")
+            st.warning(f"Data fetched but required columns for plotting are missing: {missing_cols}. Check your database tables ('MQ_Hourly', 'BCQ_Hourly', 'Prices_Hourly') and SQL query result.")
 
 
     else:
