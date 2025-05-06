@@ -98,24 +98,30 @@ data = fetch_data(selected_date_str)
 
 
 if not data.empty:
-    # --- Display Daily Summary Metrics as Cards ---
+    # --- Display Daily Summary Metrics as Cards (Centered) ---
     st.subheader("Daily Summary Metrics")
 
-    # Create three columns for the metrics
-    col1, col2, col3 = st.columns(3)
+    # Create columns for centering the metrics
+    # Use 5 columns: 2 empty spacers on the sides, 3 for the metrics in the middle
+    # The ratio [1, 1, 1, 1, 1] gives equal width, adjust as needed for centering.
+    col_spacer_left, col1, col2, col3, col_spacer_right = st.columns([1, 1, 1, 1, 1])
 
-    # Display Maximum Price and Average Price in the first two columns
+    # Display Maximum Price in the first data column (col1)
     if "Prices" in data.columns:
         max_price = data["Prices"].max()
-        avg_price = data["Prices"].mean()
         col1.metric(label="Maximum Price (PHP/kWh)", value=f"{max_price:,.2f}") # Format for readability
+    else:
+        col1.warning("Max Price data not available.")
+
+    # Display Average Price in the second data column (col2)
+    if "Prices" in data.columns: # Check again for safety, though already checked for max
+        avg_price = data["Prices"].mean()
         col2.metric(label="Average Price (PHP/kWh)", value=f"{avg_price:,.2f}") # Format for readability
     else:
-        col1.warning("Prices data not available.")
-        col2.warning("Prices data not available.")
+        col2.warning("Avg Price data not available.")
 
 
-    # --- Display Maximum Total MQ and corresponding time in the third column ---
+    # Display Maximum Total MQ and corresponding time in the third data column (col3)
     if "Total_MQ" in data.columns and "Time" in data.columns and not data["Total_MQ"].empty:
         # Find the row with the maximum Total_MQ value
         max_mq_value = data["Total_MQ"].max()
@@ -138,7 +144,7 @@ if not data.empty:
              col3.info("Total_MQ data is all zero/null or not applicable for max metric.")
 
     else:
-         col3.warning("Total_MQ or Time data not available or empty for max metric.")
+         col3.warning("Max MQ or Time data not available or empty.")
 
 
     st.subheader("Hourly Summary")
@@ -187,7 +193,7 @@ if not data.empty:
                 # --- Align zero for the energy axis - 'zero=True' goes inside alt.Scale() ---
                 y=alt.Y("Value", title="Energy (kWh)", axis=alt.Axis(titleColor="tab:blue"), scale=alt.Scale(zero=True)),
                 # --- Use a commonly supported colorblind-friendly scheme ---
-                # --- FIX: Move legend to the bottom ---
+                # --- Move legend to the bottom ---
                 color=alt.Color("Metric", legend=alt.Legend(title="Metric", orient='bottom')), # Use 'category10' palette
                 tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
             ).properties(
@@ -196,13 +202,12 @@ if not data.empty:
 
             # Create chart for the right y-axis (Prices) - as bars
             # --- Change the color of the price bars to apple green (#40B0A6 is a pleasant shade) ---
-            chart_price = alt.Chart(melted_data[melted_data["Metric"] == "Prices"]).mark_bar(color="#40B0A6").encode(
+            chart_price = alt.Chart(melted_data[melted_data["Metric"] == "Prices"])\
+                .mark_bar(color="#40B0A6")\
+                .encode(
                 x=alt.X("Time", axis=alt.Axis(title="")), # Empty title as it's shared
                 # --- Align zero for the price axis - 'zero=True' goes inside alt.Scale() ---
                 y=alt.Y("Value", title="Price (PHP/kWh)", axis=alt.Axis(titleColor="tab:red"), scale=alt.Scale(zero=True)),
-                # --- FIX: Move legend to the bottom (if this layer also had a color legend) ---
-                # This layer doesn't have a color legend by default, but if it did, orient='bottom'
-                # would apply. The combined legend is controlled by the first chart's legend encoding.
                 tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
             ).properties(
                  title="Prices" # Title for this layer's legend
