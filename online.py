@@ -17,6 +17,7 @@ import altair as alt # Import Altair
 
 # --- DATABASE CONFIGURATION ---
 def get_sqlalchemy_engine():
+    """Establishes and returns a SQLAlchemy database engine using Streamlit secrets."""
     try:
         # Read database credentials from secrets.toml
         user = st.secrets["database"]["user"]
@@ -41,6 +42,7 @@ def get_sqlalchemy_engine():
 
 # --- LOAD DATA ---
 def fetch_data(selected_date_str):
+    """Fetches hourly MQ, BCQ, and Prices data for a selected date."""
     try:
         engine = get_sqlalchemy_engine() # Get the engine using the updated function
         query = """
@@ -53,15 +55,20 @@ def fetch_data(selected_date_str):
                 mq."Time"
         """
         # --- Pass parameters as a list containing a tuple ---
+        # This format [(value,)] is often required by database adapters for single positional parameters.
         df = pd.read_sql(query, engine, params=[(selected_date_str,)])
 
-        # --- Convert 'Time' column to datetime objects ---
+        # --- Convert 'Time' column to datetime objects for Altair ---
         # Altair works best with datetime objects for temporal axes.
         if not df.empty and 'Time' in df.columns:
             # Assuming "Time" column contains time strings like "HH:MM:SS" or similar
             # Combine with the selected date to create full datetime objects
             # Ensure the Time column is treated as string before concatenation
-            df['Time'] = pd.to_datetime(selected_date_str + ' ' + df['Time'].astype(str))
+            try:
+                df['Time'] = pd.to_datetime(selected_date_str + ' ' + df['Time'].astype(str))
+            except Exception as e:
+                st.error(f"Error converting 'Time' column to datetime: {e}. Please check the format of the 'Time' column in your database.")
+                return pd.DataFrame() # Return empty DataFrame on error
 
 
         return df
@@ -69,85 +76,129 @@ def fetch_data(selected_date_str):
         st.error(f"Error fetching data: {e}")
         return pd.DataFrame()
 
-# Removed the fetch_generator_data function
+# Removed the fetch_generator_data function as requested
 
 
 # --- STREAMLIT UI ---
 st.title("📊 Daily Energy Trading Dashboard")
+
+# Date input for user to select the date
 selected_date = st.date_input("Select date", datetime.today())
 
-# Format the selected date to 'YYYY-MM-DD' string
+# Format the selected date to 'YYYY-MM-DD' string for the SQL query
 selected_date_str = selected_date.strftime('%Y-%m-%d')
 
 # --- FETCH AND DISPLAY DATA ---
-# The fetching functions now call get_sqlalchemy_engine internally,
-# which reads from st.secrets
+# Fetch the hourly data for the selected date
 data = fetch_data(selected_date_str)
-# Removed the call to fetch_generator_data
-# generator_data = fetch_generator_data(selected_date_str)
 
 
 if not data.empty:
+    # --- Display Maximum Price and Total MQ ---
+    st.subheader("Daily Summary Metrics")
+    col1, col2 = st.columns(2) # Use columns to display metrics side-by-side
+
+    if "Total_MQ" in data.columns:
+        max_mq = data["Total_MQ"].max()
+        col1.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq:,.2f}") # Display Max MQ in the first column
+    else:
+         col1.warning("Total_MQ column not found for metrics.")
+
+    if "Prices" in data.columns:
+        max_price = data["Prices"].max()
+        col2.metric(label="Maximum Price (PHP/kWh)", value=f"{max_price:,.2f}") # Display Max Price in the second column
+    else:
+         col2.warning("Prices column not found for metrics.")
+
+
     st.subheader("Hourly Summary")
-    st.dataframe(data) # Display fetched data for debugging
+    # Display the fetched data as a table
+    st.dataframe(data)
 
     # --- PLOT DATA USING ALTAIR FOR INTERACTIVITY ---
     st.subheader("📈 Energy Metrics Over Time (Interactive)")
+
+    # --- DEBUGGING: Check columns before melting ---
+    # Use this to see the actual column names returned by the database.
+    # You can comment this line out once you've confirmed the column names
+    # and updated the columns_to_melt list below.
+    # st.write("Columns in data DataFrame:", data.columns.tolist()) # Use .tolist() for clearer display
 
     # Melt the DataFrame for Altair - necessary for plotting multiple metrics
     # on the same or twin axes easily with color encoding.
     # Ensure 'Time' is a datetime type before melting
     if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
-        melted_data = data.melt(
-            "Time",
-            ["Total_MQ", "Total_BCQ", "Prices"],
-            "Metric",
-            "Value"
-        )
 
-        # Create charts for the left y-axis (MQ and BCQ) - as lines
-        chart_energy = alt.Chart(melted_data[melted_data["Metric"].isin(["Total_MQ", "Total_BCQ"])]).mark_line(point=True).encode(
-            x=alt.X("Time", axis=alt.Axis(title="Time", format="%H:%M")), # Format time axis
-            # --- Align zero for the energy axis - 'zero=True' goes inside alt.Scale() ---
-            y=alt.Y("Value", title="Energy (kWh)", axis=alt.Axis(titleColor="tab:blue"), scale=alt.Scale(zero=True)),
-            # --- Use a commonly supported colorblind-friendly scheme ---
-            color=alt.Color("Metric", legend=alt.Legend(title="Metric"), scale=alt.Scale(scheme='category10')), # Use 'category10' palette
-            tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
-        ).properties(
-             title="Energy Metrics" # Title for this layer's legend
-        )
+        # --- !!! IMPORTANT: VERIFY AND UPDATE COLUMN NAMES HERE !!! ---
+        # The list below must contain the EXACT names of the columns in your
+        # 'data' DataFrame that you want to plot (Total_MQ, Total_BCQ, Prices).
+        # Check the output of the "Columns in data DataFrame:" line above
+        # to confirm the actual names returned by your database query.
+        columns_to_melt = ["Total_MQ", "Total_BCQ", "Prices"] # <-- **VERIFY/UPDATE THESE NAMES**
 
-        # Create chart for the right y-axis (Prices) - as bars
-        # --- FIX: Change the color of the price bars to apple green ---
-        chart_price = alt.Chart(melted_data[melted_data["Metric"] == "Prices"]).mark_bar(color="#40B0A6").encode(
-            x=alt.X("Time", axis=alt.Axis(title="")), # Empty title as it's shared
-            # --- Align zero for the price axis - 'zero=True' goes inside alt.Scale() ---
-            y=alt.Y("Value", title="Price (PHP/kWh)", axis=alt.Axis(titleColor="tab:red"), scale=alt.Scale(zero=True)),
-            tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
-        ).properties(
-             title="Prices" # Title for this layer's legend
-        )
+        # Check if all columns to melt exist in the DataFrame
+        if all(col in data.columns for col in columns_to_melt):
+            melted_data = data.melt(
+                id_vars=["Time"], # Use id_vars to specify identifier columns
+                value_vars=columns_to_melt, # Columns to unpivot
+                var_name="Metric", # Name for the new column holding metric names
+                value_name="Value" # Name for the new column holding metric values
+            )
 
-        # Combine the charts with independent y-axes
-        # --- Reverse the layering order to put bars behind lines ---
-        # List chart_price first to draw its bars at the bottom, then chart_energy lines on top.
-        combined_chart = alt.layer(chart_price, chart_energy).resolve_scale(
-            y='independent' # Allow y-axes to have different scales
-        ).properties(
-            title=f"Energy Metrics and Prices for {selected_date_str}"
-        )
+            # Debugging: Display melted data
+            # st.subheader("Melted Data for Plotting")
+            # st.dataframe(melted_data)
+            # st.write("Melted Data Types:", melted_data.dtypes)
 
 
-        # Display the chart in Streamlit
-        st.altair_chart(combined_chart, use_container_width=True)
+            # Create charts for the left y-axis (MQ and BCQ) - as lines
+            chart_energy = alt.Chart(melted_data[melted_data["Metric"].isin(["Total_MQ", "Total_BCQ"])]).mark_line(point=True).encode(
+                x=alt.X("Time", axis=alt.Axis(title="Time", format="%H:%M")), # Format time axis
+                # --- Align zero for the energy axis - 'zero=True' goes inside alt.Scale() ---
+                y=alt.Y("Value", title="Energy (kWh)", axis=alt.Axis(titleColor="tab:blue"), scale=alt.Scale(zero=True)),
+                # --- Use a commonly supported colorblind-friendly scheme ---
+                color=alt.Color("Metric", legend=alt.Legend(title="Metric"), scale=alt.Scale(scheme='category10')), # Use 'category10' palette
+                tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
+            ).properties(
+                 title="Energy Metrics" # Title for this layer's legend
+            )
+
+            # Create chart for the right y-axis (Prices) - as bars
+            # --- Change the color of the price bars to apple green ---
+            chart_price = alt.Chart(melted_data[melted_data["Metric"] == "Prices"]).mark_bar(color="#40B0A6").encode(
+                x=alt.X("Time", axis=alt.Axis(title="")), # Empty title as it's shared
+                # --- Align zero for the price axis - 'zero=True' goes inside alt.Scale() ---
+                y=alt.Y("Value", title="Price (PHP/kWh)", axis=alt.Axis(titleColor="tab:red"), scale=alt.Scale(zero=True)),
+                tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
+            ).properties(
+                 title="Prices" # Title for this layer's legend
+            )
+
+            # Combine the charts with independent y-axes
+            # --- Reverse the layering order to put bars behind lines ---
+            # List chart_price first to draw its bars at the bottom, then chart_energy lines on top.
+            combined_chart = alt.layer(chart_price, chart_energy).resolve_scale(
+                y='independent' # Allow y-axes to have different scales
+            ).properties(
+                title=f"Energy Metrics and Prices for {selected_date_str}"
+            ).interactive() # Add interactivity for zooming and panning
+
+            # Display the chart in Streamlit
+            st.altair_chart(combined_chart, use_container_width=True)
+        else:
+            # If columns are missing, display an informative warning
+            missing_cols = [col for col in columns_to_melt if col not in data.columns]
+            st.warning(f"Data fetched but required columns for plotting are missing: {missing_cols}. Check your database tables ('MQ_Hourly', 'BCQ_Hourly', 'Prices_Hourly') and SQL query.")
+
+
     else:
-        st.warning("Time column is not in the expected datetime format for plotting or is empty.")
+        st.warning("Time column is not in the expected datetime format for plotting or data is empty after fetch.")
 
 
 else:
     st.warning(f"No data available for selected date: {selected_date_str}.")
 
-# Removed the section that displayed generator_data
+# Removed the section that displayed generator_data as requested
 # if not generator_data.empty:
 #     st.subheader("🔌 Generator BCQ Summary")
 #     st.dataframe(generator_data)
