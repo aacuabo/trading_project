@@ -100,7 +100,7 @@ if not data.empty:
     if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
         melted_data = data.melt(
             "Time",
-            ["Demand", "Nomination", "Prices"],
+            ["Total_MQ", "Total_BCQ", "Prices"],
             "Metric",
             "Value"
         )
