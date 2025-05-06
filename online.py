@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
-from datetime import datetime
+from datetime import datetime, date
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import altair as alt # Import Altair
@@ -41,6 +41,26 @@ def get_sqlalchemy_engine():
 
 
 # --- LOAD DATA ---
+def fetch_available_dates():
+    """Fetches a list of unique dates available in the database."""
+    try:
+        engine = get_sqlalchemy_engine()
+        # Assuming 'MQ_Hourly' table contains all relevant dates.
+        # You might want to check other tables or a dedicated dates table if available.
+        query = """
+            SELECT DISTINCT "Date"
+            FROM "MQ_Hourly"
+            ORDER BY "Date";
+        """
+        dates_df = pd.read_sql(query, engine)
+        # Convert datetime objects to date objects
+        available_dates = dates_df["Date"].dt.date.tolist()
+        return available_dates
+    except Exception as e:
+        st.error(f"Error fetching available dates: {e}")
+        return []
+
+
 def fetch_data(selected_date_str):
     """Fetches hourly MQ, BCQ, and Prices data for a selected date."""
     try:
@@ -67,6 +87,7 @@ def fetch_data(selected_date_str):
             try:
                 # We need to handle potential None or NaN values in the 'Time' column before astype(str)
                 df['Time'] = df['Time'].fillna('').astype(str)
+                # Use errors='coerce' to turn unparseable dates into NaT (Not a Time)
                 df['Time'] = pd.to_datetime(selected_date_str + ' ' + df['Time'], errors='coerce')
                 # Drop rows where datetime conversion failed
                 df.dropna(subset=['Time'], inplace=True)
@@ -86,8 +107,34 @@ def fetch_data(selected_date_str):
 # --- STREAMLIT UI ---
 st.title("📊 Daily Energy Trading Dashboard")
 
-# Date input for user to select the date
-selected_date = st.date_input("Select date", datetime.today())
+# --- Fetch available dates and configure date input ---
+available_dates = fetch_available_dates()
+
+if not available_dates:
+    st.error("No available dates found in the database. Please check data availability.")
+    st.stop() # Stop the app if no dates are available
+
+# Set min, max, and default value for the date input based on available dates
+min_available_date = min(available_dates)
+max_available_date = max(available_dates)
+# Set default date to the latest available date or today if within range
+default_date = max_available_date if date.today() > max_available_date else date.today()
+# Ensure default date is within the available range
+default_date = max_available_date if default_date < min_available_date else default_date
+
+
+selected_date = st.date_input(
+    "Select date",
+    value=default_date,
+    min_value=min_available_date,
+    max_value=max_available_date
+)
+
+# Check if the selected date is actually in the list of available dates (optional but recommended)
+if selected_date not in available_dates:
+    st.warning(f"Data may not be available for the selected date: {selected_date}. Displaying data for {max_available_date} instead.")
+    selected_date = max_available_date # Fallback to latest available date
+
 
 # Format the selected date to 'YYYY-MM-DD' string for the SQL query
 selected_date_str = selected_date.strftime('%Y-%m-%d')
@@ -98,30 +145,26 @@ data = fetch_data(selected_date_str)
 
 
 if not data.empty:
-    # --- Display Daily Summary Metrics as Cards (Centered) ---
+    # --- Display Daily Summary Metrics as Cards ---
     st.subheader("Daily Summary Metrics")
 
-    # Create columns for centering the metrics
+    # Create three columns for the metrics
     # Use 5 columns: 2 empty spacers on the sides, 3 for the metrics in the middle
     # The ratio [1, 1, 1, 1, 1] gives equal width, adjust as needed for centering.
     col_spacer_left, col1, col2, col3, col_spacer_right = st.columns([1, 1, 1, 1, 1])
 
-    # Display Maximum Price in the first data column (col1)
-    if "Prices" in data.columns:
+    # Display Maximum Price and Average Price in the first two data columns (col1 and col2)
+    if "Prices" in data.columns and not data["Prices"].empty:
         max_price = data["Prices"].max()
-        col1.metric(label="Maximum Price (PHP/kWh)", value=f"{max_price:,.2f}") # Format for readability
-    else:
-        col1.warning("Max Price data not available.")
-
-    # Display Average Price in the second data column (col2)
-    if "Prices" in data.columns: # Check again for safety, though already checked for max
         avg_price = data["Prices"].mean()
+        col1.metric(label="Maximum Price (PHP/kWh)", value=f"{max_price:,.2f}") # Format for readability
         col2.metric(label="Average Price (PHP/kWh)", value=f"{avg_price:,.2f}") # Format for readability
     else:
+        col1.warning("Max Price data not available.")
         col2.warning("Avg Price data not available.")
 
 
-    # Display Maximum Total MQ and corresponding time in the third data column (col3)
+    # --- Display Maximum Total MQ and corresponding time in the third data column (col3) ---
     if "Total_MQ" in data.columns and "Time" in data.columns and not data["Total_MQ"].empty:
         # Find the row with the maximum Total_MQ value
         max_mq_value = data["Total_MQ"].max()
@@ -193,7 +236,7 @@ if not data.empty:
                 # --- Align zero for the energy axis - 'zero=True' goes inside alt.Scale() ---
                 y=alt.Y("Value", title="Energy (kWh)", axis=alt.Axis(titleColor="tab:blue"), scale=alt.Scale(zero=True)),
                 # --- Use a commonly supported colorblind-friendly scheme ---
-                # --- Move legend to the bottom ---
+                # --- FIX: Move legend to the bottom ---
                 color=alt.Color("Metric", legend=alt.Legend(title="Metric", orient='bottom')), # Use 'category10' palette
                 tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
             ).properties(
@@ -202,9 +245,7 @@ if not data.empty:
 
             # Create chart for the right y-axis (Prices) - as bars
             # --- Change the color of the price bars to apple green (#40B0A6 is a pleasant shade) ---
-            chart_price = alt.Chart(melted_data[melted_data["Metric"] == "Prices"])\
-                .mark_bar(color="#40B0A6")\
-                .encode(
+            chart_price = alt.Chart(melted_data[melted_data["Metric"] == "Prices"]).mark_bar(color="#40B0A6").encode(
                 x=alt.X("Time", axis=alt.Axis(title="")), # Empty title as it's shared
                 # --- Align zero for the price axis - 'zero=True' goes inside alt.Scale() ---
                 y=alt.Y("Value", title="Price (PHP/kWh)", axis=alt.Axis(titleColor="tab:red"), scale=alt.Scale(zero=True)),
