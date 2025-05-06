@@ -174,7 +174,6 @@ if not data.empty:
     # --- Display Daily Summary Metrics as Cards ---
     st.subheader("Daily Summary Metrics")
 
-    # --- Removed columns for centering the metrics ---
     # Create three columns for the metrics using the default layout
     col1, col2, col3 = st.columns(3)
 
@@ -220,6 +219,10 @@ if not data.empty:
     else:
          col3.warning("Max MQ or Time data not available or empty.")
 
+    st.subheader("Hourly Summary")
+    # Display the fetched data as a table
+    st.dataframe(data)
+
     # --- PLOT DATA USING ALTAIR FOR INTERACTIVITY ---
     st.subheader("📈 Energy Metrics Over Time (Interactive)")
 
@@ -261,9 +264,13 @@ if not data.empty:
                 x=alt.X("Time", axis=alt.Axis(title="Time", format="%H:%M")), # Format time axis
                 # --- Align zero for the energy axis - 'zero=True' goes inside alt.Scale() ---
                 y=alt.Y("Value", title="Energy (kWh)", axis=alt.Axis(titleColor="tab:blue"), scale=alt.Scale(zero=True)),
-                # --- Use a commonly supported colorblind-friendly scheme ---
+                # --- Use specified colors for MQ and BCQ ---
                 # --- FIX: Move legend to the bottom ---
-                color=alt.Color("Metric", legend=alt.Legend(title="Metric", orient='bottom')), # Use 'category10' palette
+                color=alt.Color(
+                    "Metric",
+                    legend=alt.Legend(title="Metric", orient='bottom'),
+                    scale=alt.Scale(domain=['Total_MQ', 'Total_BCQ'], range=['#FFC20A', '#1A85FF']) # Set specific colors
+                ),
                 tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
             ).properties(
                  title="Energy Metrics" # Title for this layer's legend
@@ -300,9 +307,11 @@ if not data.empty:
     else:
         st.warning("Time column is not in the expected datetime format for plotting or data is empty after fetch.")
 
-    st.subheader("Hourly Summary")
-    # Display the fetched data as a table
-    st.dataframe(data)
+    # --- Moved Hourly Summary below the plot for potentially better flow ---
+    # st.subheader("Hourly Summary")
+    # # Display the fetched data as a table
+    # st.dataframe(data)
+
 
 else:
     st.warning(f"No data available for selected date: {selected_date_str}.")
