@@ -226,10 +226,10 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
     # Define a colorblind-friendly palette
     # Based on ColorBrewer and Wong's color schemes for colorblind accessibility
     COLOR_PALETTE = {
-        "junction": "#999999",         # Gray
+        "junction": "#f0e442",         # Gray
         "generator": "#0072B2",        # Blue
         "wesm_import": "#D55E00",      # Vermilion (darker orange)
-        "load": "#009E73",             # Green
+        "load": "#d55e00",             # Green
         "wesm_export": "#CC79A7"       # Reddish purple
     }
     
