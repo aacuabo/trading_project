@@ -24,7 +24,7 @@ def get_sqlalchemy_engine():
 
         url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
         # Use pool_pre_ping=True to handle potential disconnections
-        engine = create_engine(url, pool_pre_ping=True)
+        engine = create_create_engine(url, pool_pre_ping=True) # Corrected typo here
         return engine
     except KeyError as e:
         st.error(f"Error loading database credentials: {e}. Make sure your .streamlit/secrets.toml file is correctly configured with [database] section and keys: user, password, host, db, port.")
@@ -61,48 +61,56 @@ def fetch_available_dates():
         return []
 
 
+# Define mappings for component names (Using exact database column names as keys)
+BCQ_SOURCE_MAP = {
+    "FDC Misamis Power Corporation  (FDC)": 'FDC',
+    "GNPower Kauswagan Ltd. Co. (GNPKLCO)": 'GNPK',
+    "Power Sector Assets & Liabilities Management Corporation (PSALMGMIN)": 'PSALM',
+    "Sarangani Energy Corporation (SEC)": 'SEC',
+    "Therma South, Inc. (TSI)": 'TSI',
+    "Malita Power Inc. (SMCPC)": 'MPI'
+}
+
+MQ_DEST_MAP = {
+    "14BGN_T1L1_KIDCOTE01_NET": 'M1/M6/M8',
+    "14BGN_T1L1_KIDCOTE02_NET": 'M2',
+    "14BGN_T1L1_KIDCOTE03_NET": 'M3',
+    "14BGN_T1L1_KIDCOTE04_NET": 'M4',
+    "14BGN_T2L1_KIDCOTE05_NET": 'M5',
+    "14BGN_T1L1_KIDCOTE08_NET": 'M7',
+    "14BGN_T1L1_KIDCOTE10_NET": 'M9',
+    "14BGN_T1L1_KIDCSCV01_DEL": 'KIDCSCV01_DEL',
+    "14BGN_T1L1_KIDCSCV02_DEL": 'KIDCSCV02_DEL'
+}
+
+
 @st.cache_data(ttl=600) # Cache hourly data for 10 minutes
 def fetch_data(selected_date_str: str): # Added type hint for caching key
     """
     Fetches hourly MQ, BCQ, Prices, and individual component data for a selected date.
     Includes error handling for potentially missing individual component columns.
+    Uses exact database column names provided by the user.
     """
     try:
         engine = get_sqlalchemy_engine()
 
         # Define the columns we want to fetch, including individual components
         # Use exact column names from your database, including quotes if they have spaces or special characters
-        mq_cols_raw = [
-            "Total_MQ",
-            "14BGN_T1L1_KIDCOTE01_NET",
-            "14BGN_T1L1_KIDCOTE02_NET",
-            "14BGN_T1L1_KIDCOTE03_NET",
-            "14BGN_T1L1_KIDCOTE04_NET",
-            "14BGN_T2L1_KIDCOTE05_NET",
-            "14BGN_T1L1_KIDCOTE08_NET",
-            "14BGN_T1L1_KIDCOTE10_NET",
-            "14BGN_T1L1_KIDCSCV01_DEL",
-            "14BGN_T1L1_KIDCSCV02_DEL",
-        ]
-        bcq_cols_raw = [
-            "Total_BCQ",
-            "FDC", # Assuming column name is "FDC"
-            "GNPK", # Assuming column name is "GNPK"
-            "PSALM", # Assuming column name is "PSALM"
-            "SEC", # Assuming column name is "SEC"
-            "TSI", # Assuming column name is "TSI"
-            "MPI", # Assuming column name is "MPI"
-        ]
-        price_cols_raw = ["Prices"]
+        mq_cols_raw = list(MQ_DEST_MAP.keys()) + ["Total_MQ"] # Include Total_MQ from MQ table
+        bcq_cols_raw = list(BCQ_SOURCE_MAP.keys()) + ["Total_BCQ"] # Include Total_BCQ from BCQ table
+        price_cols_raw = ["Prices"] # Assuming Prices is in a separate table
 
         # Quote column names for SQL query if they contain special characters or spaces
         mq_cols_quoted = [f'"{col}"' for col in mq_cols_raw]
         bcq_cols_quoted = [f'"{col}"' for col in bcq_cols_raw]
         price_cols_quoted = [f'"{col}"' for col in price_cols_raw]
 
+        # Select columns, aliasing the BCQ columns to their simpler names for easier pandas handling
+        select_cols = [f'mq.{col}' for col in mq_cols_quoted]
+        select_cols.extend([f'bcq.{col} AS "{BCQ_SOURCE_MAP.get(col.strip('"'), col.strip(\'"\'))}"' for col in bcq_cols_quoted]) # Alias BCQ columns
+        select_cols.extend([f'p.{col}' for col in price_cols_quoted])
 
-        # Construct the SELECT part of the query dynamically
-        select_cols = [f'mq.{col}' for col in mq_cols_quoted] + [f'bcq.{col}' for col in bcq_cols_quoted] + [f'p.{col}' for col in price_cols_quoted]
+
         query = f"""
             SELECT
                 mq."Date",
@@ -140,8 +148,8 @@ def fetch_data(selected_date_str: str): # Added type hint for caching key
                  return pd.DataFrame()
 
         # Ensure all fetched columns are numeric where expected, coercing errors to NaN
-        # Use the raw column names for DataFrame operations
-        all_numeric_cols = mq_cols_raw + bcq_cols_raw + price_cols_raw
+        # Use the raw MQ column names and the ALIASED BCQ column names for DataFrame operations
+        all_numeric_cols = mq_cols_raw + list(BCQ_SOURCE_MAP.values()) + price_cols_raw # Use values() for BCQ aliases
         for col in all_numeric_cols:
              if col in df.columns:
                   df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -150,9 +158,14 @@ def fetch_data(selected_date_str: str): # Added type hint for caching key
         if 'Time' in df.columns:
              df.dropna(subset=['Time'], inplace=True)
 
+
         return df
     except Exception as e:
         st.error(f"Error fetching data: {e}")
+        # Provide more specific error message if a column might be missing
+        if "column" in str(e) and "does not exist" in str(e):
+             missing_col_hint = str(e).split('"')[-2] # Attempt to extract the column name
+             st.error(f"Database column '{missing_col_hint}' not found. Ensure column names in your database tables match the names specified in the code for MQ Units and BCQ Generators.")
         return pd.DataFrame()
 
 
@@ -295,50 +308,50 @@ with main_content: # Place all the main content inside the central column
         # --- SANKEY CHART: Energy Flow ---
         st.subheader("🔗 Daily Energy Flow (Sankey Diagram)")
 
-        # Define mappings for component names (using raw names from DB fetch)
-        bcq_source_map = {
-            'FDC': 'FDC',
-            'GNPK': 'GNPK',
-            'PSALM': 'PSALM',
-            'SEC': 'SEC',
-            'TSI': 'TSI',
-            'MPI': 'MPI'
-        }
-        mq_dest_map = {
-            '14BGN_T1L1_KIDCOTE01_NET': 'M1/M6/M8',
-            '14BGN_T1L1_KIDCOTE02_NET': 'M2',
-            '14BGN_T1L1_KIDCOTE03_NET': 'M3',
-            '14BGN_T1L1_KIDCOTE04_NET': 'M4',
-            '14BGN_T2L1_KIDCOTE05_NET': 'M5',
-            '14BGN_T1L1_KIDCOTE08_NET': 'M7',
-            '14BGN_T1L1_KIDCOTE10_NET': 'M9',
-            '14BGN_T1L1_KIDCSCV01_DEL': 'KIDCSCV01_DEL',
-            '14BGN_T1L1_KIDCSCV02_DEL': 'KIDCSCV02_DEL'
-        }
+        st.info("""
+            This Sankey diagram visualizes a conceptual energy flow based on your specified components and formula.
+            Flows originate from individual BCQ Generators and WESM, combine into a 'Combined Input' node scaled per your formula,
+            and then distribute proportionally to individual MQ Units.
+            Note: The link values are derived from the daily sums and your scaling formula, not direct individual flows.
+        """)
 
         # Calculate daily sums for individual components and totals
         daily_sums = {}
-        # Use raw column names for accessing DataFrame columns
-        all_component_cols_raw = list(bcq_source_map.keys()) + list(mq_dest_map.keys()) + ['Total_BCQ', 'Total_MQ', 'WESM']
+        # Use raw column names from the dictionaries as keys to access DataFrame columns
+        all_component_cols_raw = list(BCQ_SOURCE_MAP.keys()) + list(MQ_DEST_MAP.keys()) + ['Total_BCQ', 'Total_MQ', 'WESM']
 
         for col in all_component_cols_raw:
             # Check if column exists and is numeric before summing
             if col in data.columns and pd.api.types.is_numeric_dtype(data[col]):
-                 # Use .sum(skipna=True) which is default, but explicit is clear
                  daily_sums[col] = data[col].sum()
             else:
                  daily_sums[col] = 0 # Default to 0 if column is missing or not numeric
 
-        # --- DEBUGGING: Display Daily Sums ---
-        st.write("Daily Sums (for Sankey):", daily_sums)
 
         daily_total_bcq_sum = daily_sums.get('Total_BCQ', 0)
         daily_total_mq_sum = daily_sums.get('Total_MQ', 0)
         daily_wesm_sum = daily_sums.get('WESM', 0)
 
-        # Check if there is any data to display in the Sankey chart
-        # A simple check on total sums might not be enough if individual components have values
-        any_component_data = any(daily_sums.get(col, 0) != 0 for col in all_component_cols_raw)
+        # Calculate the value of the RHS of the user's equation for context
+        rhs_equation_value = (daily_total_bcq_sum * 1000) - daily_wesm_sum
+
+        st.write(f"Daily Total MQ (Sum of Destinations): {daily_total_mq_sum:,.2f} kWh")
+        st.write(f"Daily Total BCQ (Sum of Sources): {daily_total_bcq_sum:,.2f} kWh")
+        st.write(f"Daily Total WESM: {daily_wesm_sum:,.2f} kWh")
+        st.write(f"Value of RHS of Equation (Total_BCQ * 1000 - WESM): {rhs_equation_value:,.2f} kWh")
+        st.write(f"Difference (Daily Total MQ - RHS): {(daily_total_mq_sum - rhs_equation_value):,.2f} kWh")
+
+
+        # Check if there is any data in the components to build the Sankey chart
+        any_component_data = False
+        for col in list(BCQ_SOURCE_MAP.keys()) + list(MQ_DEST_MAP.keys()):
+            if daily_sums.get(col, 0) != 0:
+                 any_component_data = True
+                 break
+        # Also check if WESM contributes
+        if daily_wesm_sum != 0:
+             any_component_data = True
+
 
         if not any_component_data:
              st.info(f"No relevant component data available to build the Sankey diagram for {selected_date_str}.")
@@ -347,28 +360,31 @@ with main_content: # Place all the main content inside the central column
             # Define nodes for the Sankey diagram
             node_labels = []
             # Add BCQ source nodes that have non-zero sums
-            bcq_source_nodes_present = [name for col, name in bcq_source_map.items() if daily_sums.get(col, 0) != 0]
+            bcq_source_nodes_present = [name for col, name in BCQ_SOURCE_MAP.items() if daily_sums.get(col, 0) != 0]
             node_labels.extend(bcq_source_nodes_present)
 
             # Add WESM node if WESM sum is not zero
             if daily_wesm_sum != 0:
                  node_labels.append('WESM')
 
-            # Add intermediate nodes if relevant data is present to flow into them
-            if daily_total_bcq_sum != 0 or any(daily_sums.get(col, 0) != 0 for col in bcq_source_map.keys()):
-                 node_labels.append('Total BCQ Input')
-            if daily_wesm_sum != 0:
-                 node_labels.append('Total WESM Input')
-            # 'Combined Input' is relevant if either scaled BCQ or scaled WESM is non-zero
+            # Add intermediate nodes - only if there's flow into or out of them
+            include_total_bcq_input = daily_total_bcq_sum != 0 or any(daily_sums.get(col, 0) != 0 for col in BCQ_SOURCE_MAP.keys())
+            include_total_wesm_input = daily_wesm_sum != 0
             scaled_total_bcq = daily_total_bcq_sum * 1000
             scaled_wesm = daily_wesm_sum * -1
             combined_input_sum = scaled_total_bcq + scaled_wesm
-            if combined_input_sum != 0:
+            include_combined_input = combined_input_sum != 0 or any(daily_sums.get(col, 0) != 0 for col in MQ_DEST_MAP.keys()) # Also if destinations exist
+
+            if include_total_bcq_input:
+                 node_labels.append('Total BCQ Input')
+            if include_total_wesm_input:
+                 node_labels.append('Total WESM Input')
+            if include_combined_input:
                  node_labels.append('Combined Input')
 
 
             # Add MQ destination nodes that have non-zero sums
-            mq_dest_nodes_present = [name for col, name in mq_dest_map.items() if daily_sums.get(col, 0) != 0]
+            mq_dest_nodes_present = [name for col, name in MQ_DEST_MAP.items() if daily_sums.get(col, 0) != 0]
             node_labels.extend(mq_dest_nodes_present)
 
 
@@ -388,9 +404,9 @@ with main_content: # Place all the main content inside the central column
 
             # Links from individual BCQ sources to 'Total BCQ Input'
             if 'Total BCQ Input' in label_to_index: # Only create links if the target node exists
-                for col, name in bcq_source_map.items():
+                for col, name in BCQ_SOURCE_MAP.items():
                      value = daily_sums.get(col, 0)
-                     if value != 0 and name in label_to_index: # Ensure source node exists
+                     if value != 0 and name in label_to_index: # Ensure source node exists and has value
                           sources.append(label_to_index[name])
                           targets.append(label_to_index['Total BCQ Input'])
                           values.append(abs(value)) # Use absolute value for link thickness
@@ -424,12 +440,13 @@ with main_content: # Place all the main content inside the central column
             # Links from 'Combined Input' to individual MQ destinations (proportional distribution)
             if 'Combined Input' in label_to_index and combined_input_sum != 0: # Check if source node exists and there's flow
                  # Calculate the sum of daily MQ destination sums for proportional distribution
-                 total_mq_dest_sum = sum(daily_sums.get(col, 0) for col in mq_dest_map.keys())
+                 total_mq_dest_sum = sum(daily_sums.get(col, 0) for col in MQ_DEST_MAP.keys())
 
                  if total_mq_dest_sum != 0:
-                      for col, name in mq_dest_map.items():
+                      for col, name in MQ_DEST_MAP.items():
                            daily_mq_dest_sum = daily_sums.get(col, 0)
-                           if daily_mq_dest_sum != 0 and name in label_to_index: # Ensure target node exists
+                           # Only create a link to this destination if it exists as a node and has a non-zero sum
+                           if daily_mq_dest_sum != 0 and name in label_to_index:
                                 # Calculate the proportional value flowing to this destination
                                 # Use the actual combined_input_sum (can be positive or negative) for proportional calculation
                                 proportional_value = (daily_mq_dest_sum / total_mq_dest_sum) * combined_input_sum
@@ -438,11 +455,7 @@ with main_content: # Place all the main content inside the central column
                                      targets.append(label_to_index[name])
                                      values.append(abs(proportional_value)) # Use absolute value for thickness
                                      link_labels.append(f'Combined Input to {name}: {proportional_value:,.2f}')
-                 else:
-                      st.warning("Sum of individual MQ destination data is zero, cannot proportionally distribute Combined Input.")
-            elif 'Combined Input' in label_to_index:
-                 st.info("Combined Input sum is zero, no flow to MQ destinations.")
-
+                 # else: This case is handled by the outer 'if not any_component_data:' check
 
             # --- DEBUGGING: Display Link Data ---
             st.write("Sankey Sources:", sources)
@@ -482,3 +495,4 @@ with main_content: # Place all the main content inside the central column
 
     else:
         st.warning(f"No data available for selected date: {selected_date_str}.")
+
