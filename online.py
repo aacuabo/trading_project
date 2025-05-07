@@ -184,36 +184,58 @@ def fetch_sankey_destination_consumption(selected_date_str: str, interval_time_d
         return consumption
 
 def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: float, selected_date_str: str, interval_time_hh_mm_str: str):
-    # interval_mq_val is Total_MQ for the interval (unscaled)
-    # interval_wesm_val_unscaled is (Total_BCQ_unscaled - Total_MQ_unscaled) for the interval
-
+    """
+    Creates a professional Sankey diagram showing energy flow for a specific interval.
+    Uses a colorblind-friendly palette and clear, concise labeling.
+    
+    Args:
+        interval_mq_val: Total MQ for the interval (unscaled)
+        interval_wesm_val_unscaled: (Total_BCQ_unscaled - Total_MQ_unscaled) for the interval
+        selected_date_str: Date in string format (YYYY-MM-DD)
+        interval_time_hh_mm_str: Time interval in HH:MM format
+        
+    Returns:
+        Plotly Figure object or None if insufficient data
+    """
     if pd.isna(interval_mq_val) or interval_mq_val < 0:
-        st.info(f"Interval MQ is invalid ({interval_mq_val:,.0f} kWh) for {interval_time_hh_mm_str} on {selected_date_str}. Sankey not generated.")
+        st.info(f"Invalid interval data ({interval_time_hh_mm_str}, {selected_date_str}): MQ = {interval_mq_val:,.0f} kWh")
         return None
 
-    interval_time_db_format = interval_time_hh_mm_str + ":00" # Assumes DB Time is HH:MM:SS string
+    interval_time_db_format = interval_time_hh_mm_str + ":00"  # Assumes DB Time is HH:MM:SS string
 
-    # Fetch generator contributions (these are now scaled by 100x inside the function)
+    # Fetch generator contributions (scaled by 100x inside the function)
     scaled_generator_contributions = fetch_sankey_generator_contributions(selected_date_str, interval_time_db_format)
     # Fetch destination consumptions (unscaled)
     destination_consumptions = fetch_sankey_destination_consumption(selected_date_str, interval_time_db_format)
 
     sum_scaled_generator_contributions = sum(v for v in scaled_generator_contributions.values() if pd.notna(v))
-    actual_total_mq_for_interval = interval_mq_val # This is the unscaled MQ
+    actual_total_mq_for_interval = interval_mq_val  # Unscaled MQ
 
     # Recalculate WESM balance based on scaled generation and unscaled MQ
-    # This WESM value determines import/export for the Sankey logic
     wesm_value_for_sankey = sum_scaled_generator_contributions - actual_total_mq_for_interval
 
-    # Condition for generating Sankey:
-    # Need either significant scaled generation or significant MQ.
-    if sum_scaled_generator_contributions < 0.01 and actual_total_mq_for_interval < 0.01 :
-         st.info(f"Scaled generation and MQ are too low for {interval_time_hh_mm_str} on {selected_date_str} to draw Sankey. Scaled Gen: {sum_scaled_generator_contributions:,.2f}, MQ: {actual_total_mq_for_interval:,.2f}")
-         return None
+    # Require significant data to generate Sankey
+    if sum_scaled_generator_contributions < 0.01 and actual_total_mq_for_interval < 0.01:
+        st.info(f"Insufficient flow data for {interval_time_hh_mm_str} on {selected_date_str}")
+        return None
 
-    sankey_node_labels, node_indices, sankey_sources_indices, sankey_targets_indices, sankey_values, node_colors = [], {}, [], [], [], []
+    # Initialize Sankey diagram structures
+    sankey_node_labels, node_indices = [], {}
+    sankey_sources_indices, sankey_targets_indices, sankey_values = [], [], []
     
-    def add_node(label, color="grey"):
+    # Define a colorblind-friendly palette
+    # Based on ColorBrewer and Wong's color schemes for colorblind accessibility
+    COLOR_PALETTE = {
+        "junction": "#999999",         # Gray
+        "generator": "#0072B2",        # Blue
+        "wesm_import": "#D55E00",      # Vermilion (darker orange)
+        "load": "#009E73",             # Green
+        "wesm_export": "#CC79A7"       # Reddish purple
+    }
+    
+    node_colors = []
+    
+    def add_node(label, color):
         if label not in node_indices:
             node_indices[label] = len(sankey_node_labels)
             sankey_node_labels.append(label)
@@ -221,93 +243,95 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
         return node_indices[label]
 
     # Central Junction Node
-    # Total energy flowing through this junction:
-    # Input: sum_scaled_generator_contributions + WESM_Import (if any)
-    # Output: actual_total_mq_for_interval + WESM_Export (if any)
-    # These two sums are equal.
     total_flow_through_junction = sum_scaled_generator_contributions
-    if wesm_value_for_sankey < 0: # WESM Import
+    if wesm_value_for_sankey < 0:  # WESM Import
         total_flow_through_junction += abs(wesm_value_for_sankey)
     
-    junction_node_label = f"Demand ({total_flow_through_junction:,.0f} kWh)"
-    junction_node_idx = add_node(junction_node_label, "grey")
+    junction_node_label = f"Energy Junction ({total_flow_through_junction:,.0f} kWh)"
+    junction_node_idx = add_node(junction_node_label, COLOR_PALETTE["junction"])
 
     # --- Links TO Junction Node ---
-    # 1. Scaled Generator Contributions
+    # 1. Generator Contributions
     for short_name, value in scaled_generator_contributions.items():
-        if value > 0.01: # Only show significant contributions
-            # Percentage relative to total scaled generation
-            percentage_of_total_scaled_gen = (value / sum_scaled_generator_contributions * 100) if sum_scaled_generator_contributions > 0 else 0
-            gen_node_label = f"Gen: {short_name} ({value:,.0f} kWh, {percentage_of_total_scaled_gen:.1f}%)"
-            gen_node_idx = add_node(gen_node_label, "blue")
+        if value > 0.01:  # Only show significant contributions
+            percentage = (value / sum_scaled_generator_contributions * 100) if sum_scaled_generator_contributions > 0 else 0
+            gen_node_label = f"{short_name} ({value:,.0f} kWh, {percentage:.1f}%)"
+            gen_node_idx = add_node(gen_node_label, COLOR_PALETTE["generator"])
             sankey_sources_indices.append(gen_node_idx)
             sankey_targets_indices.append(junction_node_idx)
             sankey_values.append(value)
 
-    # 2. WESM Import (if wesm_value_for_sankey < 0)
+    # 2. WESM Import
     if wesm_value_for_sankey < 0:
         import_value = abs(wesm_value_for_sankey)
         if import_value > 0.01:
-            # Percentage relative to total flow into junction
-            percentage_of_total_flow = (import_value / total_flow_through_junction * 100) if total_flow_through_junction > 0 else 0
-            wesm_import_label = f"WESM Import ({import_value:,.0f} kWh, {percentage_of_total_flow:.1f}%)"
-            wesm_import_node_idx = add_node(wesm_import_label, "red")
+            percentage = (import_value / total_flow_through_junction * 100) if total_flow_through_junction > 0 else 0
+            wesm_import_label = f"WESM Import ({import_value:,.0f} kWh, {percentage:.1f}%)"
+            wesm_import_node_idx = add_node(wesm_import_label, COLOR_PALETTE["wesm_import"])
             sankey_sources_indices.append(wesm_import_node_idx)
             sankey_targets_indices.append(junction_node_idx)
             sankey_values.append(import_value)
 
     # --- Links FROM Junction Node ---
-    # 1. To Individual Local Loads (Destination Consumptions)
-    # Sum of destination_consumptions should ideally be actual_total_mq_for_interval
+    # Individual Local Loads
     sum_destination_consumptions = sum(v for v in destination_consumptions.values() if pd.notna(v) and v > 0.01)
 
-    if sum_destination_consumptions > 0.01: # If there is any local consumption
-        # Create an aggregated "Local Demand (MQ)" node if you want to show MQ as a single block from junction
-        # For more directness, link junction to individual loads if preferred.
-        # Let's link junction to an aggregated MQ node, then MQ node to individual loads.
-        # This keeps the Sankey structure a bit cleaner if many loads.
-        # If you prefer junction -> individual loads directly, this part needs change.
-
-        # Aggregated MQ Node (optional, can connect junction directly to loads)
-        # mq_aggregate_label = f"Local Demand (MQ) ({actual_total_mq_for_interval:,.0f} kWh)"
-        # mq_aggregate_node_idx = add_node(mq_aggregate_label, "lightgreen")
-        # sankey_sources_indices.append(junction_node_idx)
-        # sankey_targets_indices.append(mq_aggregate_node_idx)
-        # sankey_values.append(actual_total_mq_for_interval) # Total MQ flows from Junction to MQ Agg.
-
-        # Individual loads from MQ Aggregate Node
+    if sum_destination_consumptions > 0.01:
         for short_name, value in destination_consumptions.items():
             if value > 0.01:
-                percentage_of_total_mq = (value / actual_total_mq_for_interval * 100) if actual_total_mq_for_interval > 0 else 0
-                dest_node_label = f"Load: {short_name} ({value:,.0f} kWh, {percentage_of_total_mq:.1f}%)"
-                dest_node_idx = add_node(dest_node_label, "green")
-                sankey_sources_indices.append(junction_node_idx) # Link from Junction directly to load
+                percentage = (value / actual_total_mq_for_interval * 100) if actual_total_mq_for_interval > 0 else 0
+                dest_node_label = f"{short_name} ({value:,.0f} kWh, {percentage:.1f}%)"
+                dest_node_idx = add_node(dest_node_label, COLOR_PALETTE["load"])
+                sankey_sources_indices.append(junction_node_idx)
                 sankey_targets_indices.append(dest_node_idx)
                 sankey_values.append(value)
     
-    # 2. To WESM Export (if wesm_value_for_sankey > 0)
+    # WESM Export
     if wesm_value_for_sankey > 0:
         export_value = wesm_value_for_sankey
         if export_value > 0.01:
-            # Percentage relative to total flow from junction (or total scaled gen if export is seen as % of gen)
-            percentage_of_total_flow = (export_value / total_flow_through_junction * 100) if total_flow_through_junction > 0 else 0
-            wesm_export_label = f"WESM Export ({export_value:,.0f} kWh, {percentage_of_total_flow:.1f}%)"
-            wesm_export_node_idx = add_node(wesm_export_label, "purple")
+            percentage = (export_value / total_flow_through_junction * 100) if total_flow_through_junction > 0 else 0
+            wesm_export_label = f"WESM Export ({export_value:,.0f} kWh, {percentage:.1f}%)"
+            wesm_export_node_idx = add_node(wesm_export_label, COLOR_PALETTE["wesm_export"])
             sankey_sources_indices.append(junction_node_idx)
             sankey_targets_indices.append(wesm_export_node_idx)
             sankey_values.append(export_value)
             
     if not sankey_values or sum(sankey_values) < 0.1:
-        sum_vals = sum(sankey_values) if sankey_values else 0
-        st.info(f"Not enough significant flow data for interval ({interval_time_hh_mm_str}) on {selected_date_str} to draw Sankey. Sum of values: {sum_vals:.2f}")
+        st.info(f"Insufficient energy flow for {interval_time_hh_mm_str} on {selected_date_str}")
         return None
     
+    # Create the Sankey diagram with professional styling
     fig = go.Figure(data=[go.Sankey(
-        node=dict(pad=25, thickness=20, line=dict(color="black", width=0.5), label=sankey_node_labels, color=node_colors),
-        link=dict(source=sankey_sources_indices, target=sankey_targets_indices, value=sankey_values,
-                  hovertemplate='Flow from %{source.label} to %{target.label}: %{value:,.0f} kWh<extra></extra>') 
+        arrangement="snap",  # More professional layout
+        node=dict(
+            pad=20,  
+            thickness=15,
+            line=dict(color="black", width=0.5),
+            label=sankey_node_labels,
+            color=node_colors
+        ),
+        link=dict(
+            source=sankey_sources_indices,
+            target=sankey_targets_indices,
+            value=sankey_values,
+            hovertemplate='%{source.label} → %{target.label}: %{value:,.0f} kWh<extra></extra>'
+        )
     )])
-    fig.update_layout(title_text=f"Energy Flow for Interval ({interval_time_hh_mm_str}) on {selected_date_str}", font_size=10, height=700)
+    
+    # Professional layout with clear title and proper spacing
+    fig.update_layout(
+        title=dict(
+            text=f"Energy Flow: {interval_time_hh_mm_str}, {selected_date_str}",
+            font=dict(size=16, color='#333333')
+        ),
+        font=dict(family="Arial, sans-serif", size=12, color='#333333'),
+        plot_bgcolor='rgba(255,255,255,0)',
+        paper_bgcolor='rgba(255,255,255,0)',
+        height=600,
+        margin=dict(l=20, r=20, t=50, b=20)
+    )
+    
     return fig
 
 # --- STREAMLIT UI (main, show_dashboard, show_about_page functions) ---
