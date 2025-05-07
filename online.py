@@ -142,7 +142,7 @@ def fetch_sankey_generator_contributions(selected_date_str: str, interval_time_d
                     value = pd.to_numeric(row[long_name], errors='coerce')
                     if pd.notna(value):
                         if long_name in GENERATOR_COLUMNS_TO_SCALE: # Apply scaling
-                            value *= 100
+                            value *= 1000
                         contributions[short_name] = value if value > 0 else 0.0
                     else:
                         contributions[short_name] = 0.0
