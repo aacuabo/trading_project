@@ -4,4 +4,5 @@ sqlalchemy
 psycopg2-binary
 matplotlib
 altair
+numpy
 plotly
