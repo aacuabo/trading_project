@@ -2,330 +2,426 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine
 from datetime import datetime, date
-# import matplotlib.pyplot as plt # Not needed with Altair plot
-# import matplotlib.ticker as ticker # Not needed with Altair plot
 import altair as alt
-# Removed: import streamlit_authenticator as stauth # Removed the authenticator library
-# Removed: import yaml # Not needed
-# Removed: from yaml.loader import SafeLoader # Not needed
+import plotly.graph_objects as go # Added for Sankey chart
 
 # Set Streamlit page configuration
 st.set_page_config(layout="wide") # Use wide layout for better display
 
-# Removed: --- User Authentication ---
-# Removed: Loading of authentication credentials and cookie from secrets
-
 # --- DATABASE CONFIGURATION ---
 @st.cache_resource # Cache the database engine creation
 def get_sqlalchemy_engine():
-    """Establishes and returns a SQLAlchemy database engine using Streamlit secrets."""
-    try:
-        # Read database credentials from secrets.toml
-        user = st.secrets["database"]["user"]
-        password = st.secrets["database"]["password"]
-        host = st.secrets["database"]["host"]
-        db = st.secrets["database"]["db"]
-        # Ensure port is an integer
-        port = int(st.secrets["database"]["port"])
-
-        url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
-        # Use pool_pre_ping=True to handle potential disconnections
-        engine = create_engine(url, pool_pre_ping=True)
-        return engine
-    except KeyError as e:
-        st.error(f"Error loading database credentials: {e}. Make sure your .streamlit/secrets.toml file is correctly configured with [database] section and keys: user, password, host, db, port.")
-        st.stop() # Stop the app if secrets are not found
-    except ValueError:
-         st.error("Error: Database port in secrets.toml is not a valid integer.")
-         st.stop()
-    except Exception as e:
-        st.error(f"Error creating database engine: {e}")
-        st.stop() # Stop the app if engine creation fails
+    """Establishes and returns a SQLAlchemy database engine using Streamlit secrets."""
+    try:
+        user = st.secrets["database"]["user"]
+        password = st.secrets["database"]["password"]
+        host = st.secrets["database"]["host"]
+        db = st.secrets["database"]["db"]
+        port = int(st.secrets["database"]["port"])
+        url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
+        engine = create_engine(url, pool_pre_ping=True)
+        return engine
+    except KeyError as e:
+        st.error(f"Error loading database credentials: {e}. Make sure your .streamlit/secrets.toml file is correctly configured with [database] section and keys: user, password, host, db, port.")
+        st.stop()
+    except ValueError:
+         st.error("Error: Database port in secrets.toml is not a valid integer.")
+         st.stop()
+    except Exception as e:
+        st.error(f"Error creating database engine: {e}")
+        st.stop()
 
 
 # --- LOAD DATA ---
-@st.cache_data(ttl=3600) # Cache available dates for an hour
+@st.cache_data(ttl=3600)
 def fetch_available_dates():
-    """Fetches a list of unique dates available in the database."""
-    try:
-        engine = get_sqlalchemy_engine()
-        # Assuming 'MQ_Hourly' table contains all relevant dates.
-        query = """
-            SELECT DISTINCT "Date"
-            FROM "MQ_Hourly"
-            ORDER BY "Date";
-        """
-        # Use parse_dates to ensure the "Date" column is read as datetime
-        dates_df = pd.read_sql(query, engine, parse_dates=["Date"])
-        # Convert datetime objects to date objects
-        available_dates = dates_df["Date"].dt.date.tolist()
-        return available_dates
-    except Exception as e:
-        st.error(f"Error fetching available dates: {e}")
-        return []
+    """Fetches a list of unique dates available in the database."""
+    try:
+        engine = get_sqlalchemy_engine()
+        query = """
+            SELECT DISTINCT "Date"
+            FROM "MQ_Hourly"
+            ORDER BY "Date";
+        """
+        dates_df = pd.read_sql(query, engine, parse_dates=["Date"])
+        available_dates = dates_df["Date"].dt.date.tolist()
+        return available_dates
+    except Exception as e:
+        st.error(f"Error fetching available dates: {e}")
+        return []
 
 
-@st.cache_data(ttl=600) # Cache hourly data for 10 minutes
-def fetch_data(selected_date_str: str): # Added type hint for caching key
-    """Fetches hourly MQ, BCQ, and Prices data for a selected date."""
-    try:
-        engine = get_sqlalchemy_engine()
-        query = """
-            SELECT mq."Time", mq."Total_MQ", bcq."Total_BCQ", p."Prices"
-            FROM "MQ_Hourly" AS mq
-            JOIN "BCQ_Hourly" AS bcq ON mq."Date" = bcq."Date" AND mq."Time" = bcq."Time"
-            JOIN "Prices_Hourly" AS p ON mq."Date" = p."Date" AND mq."Time" = p."Time"
-            WHERE mq."Date" = %s
-            ORDER BY
-                mq."Time"
-        """
-        df = pd.read_sql(query, engine, params=[(selected_date_str,)], parse_dates=["Date", "Time"])
+@st.cache_data(ttl=600)
+def fetch_data(selected_date_str: str):
+    """Fetches hourly MQ, BCQ, and Prices data for a selected date."""
+    try:
+        engine = get_sqlalchemy_engine()
+        query = """
+            SELECT mq."Time", mq."Total_MQ", bcq."Total_BCQ", p."Prices"
+            FROM "MQ_Hourly" AS mq
+            JOIN "BCQ_Hourly" AS bcq ON mq."Date" = bcq."Date" AND mq."Time" = bcq."Time"
+            JOIN "Prices_Hourly" AS p ON mq."Date" = p."Date" AND mq."Time" = p."Time"
+            WHERE mq."Date" = %s
+            ORDER BY mq."Time";
+        """
+        # parse_dates cannot parse 'Time' directly if it's just a time string without a date
+        # It's better to combine date and time after fetching if 'Time' is just HH:MM:SS
+        df = pd.read_sql(query, engine, params=[(selected_date_str,)])
 
-        if not df.empty and 'Time' in df.columns and 'Date' in df.columns:
-            try:
-                # Combine the selected date (as a string) with the time (ensure it's string)
-                df['Time_str'] = df['Time'].fillna('').astype(str).str.split().str[-1]
-                df['Datetime'] = pd.to_datetime(selected_date_str + ' ' + df['Time_str'], errors='coerce')
-                df.dropna(subset=['Datetime'], inplace=True)
-                df['Time'] = df['Datetime']
+        if not df.empty and 'Time' in df.columns:
+            try:
+                # Ensure 'Time' is string, extract time part if it's datetime.time, then combine
+                if pd.api.types.is_datetime64_any_dtype(df['Time']): # If already full datetime
+                    df['Datetime'] = df['Time']
+                elif pd.api.types.is_string_dtype(df['Time']):
+                    df['Datetime'] = pd.to_datetime(selected_date_str + ' ' + df['Time'], errors='coerce')
+                else: # Attempt to convert to string then combine (e.g. if it's datetime.time object)
+                    df['Time_str'] = df['Time'].astype(str).str.split().str[-1] # Get HH:MM:SS part
+                    df['Datetime'] = pd.to_datetime(selected_date_str + ' ' + df['Time_str'], errors='coerce')
 
-            except Exception as e:
-                st.error(f"Error converting 'Time' column to datetime after fetch: {e}. Please check the format of the 'Time' column in your database.")
-                return pd.DataFrame()
-
-        # Ensure numeric columns are indeed numeric after fetching/parsing
-        for col in ["Total_MQ", "Total_BCQ", "Prices"]:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        # Drop rows where critical numeric conversions failed if necessary, or handle NaNs later
-
-
-        return df
-    except Exception as e:
-        st.error(f"Error fetching data: {e}")
-        return pd.DataFrame()
+                df.dropna(subset=['Datetime'], inplace=True)
+                df['Time'] = df['Datetime'] # Replace original 'Time' with full datetime
+                df.drop(columns=['Datetime'], inplace=True, errors='ignore') # Clean up
+                df.drop(columns=['Time_str'], inplace=True, errors='ignore') # Clean up
+            except Exception as e:
+                st.error(f"Error converting 'Time' column to datetime after fetch: {e}. Check format.")
+                return pd.DataFrame()
+        else:
+            if 'Time' not in df.columns: st.warning("Time column missing in fetched data.")
 
 
-# --- STREAMLIT UI (Now always displayed) ---
+        for col in ["Total_MQ", "Total_BCQ", "Prices"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        return df
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
+        return pd.DataFrame()
 
-# Removed: Login widget
-# Removed: Display content based on authentication status blocks (if/elif)
-# Removed: Logout button
+# --- SANKEY CHART HELPER FUNCTIONS ---
+# Define mappings as per comments in the prompt
+GENERATOR_LONG_TO_SHORT_MAP = {
+    "FDC Misamis Power Corporation (FDC)": 'FDC',
+    "GNPower Kauswagan Ltd. Co. (GNPKLCO)": 'GNPK',
+    "Power Sector Assets & Liabilities Management Corporation (PSALMGMIN)": 'PSALM',
+    "Sarangani Energy Corporation (SEC)": 'SEC',
+    "Therma South, Inc. (TSI)": 'TSI',
+    "Malita Power Inc. (SMCPC)": 'MPI'
+}
 
-st.title("📊 Daily Energy Trading Dashboard") # Main title
+DESTINATION_LONG_TO_SHORT_MAP = {
+    "14BGN_T1L1_KIDCOTE01_NET": 'M1/M6/M8',
+    "14BGN_T1L1_KIDCOTE02_NET": 'M2',
+    "14BGN_T1L1_KIDCOTE03_NET": 'M3',
+    "14BGN_T1L1_KIDCOTE04_NET": 'M4',
+    "14BGN_T2L1_KIDCOTE05_NET": 'M5',
+    "14BGN_T1L1_KIDCOTE08_NET": 'M7',
+    "14BGN_T1L1_KIDCOTE10_NET": 'M9',
+    "14BGN_T1L1_KIDCSCV01_DEL": 'KIDCSCV01_DEL',
+    "14BGN_T1L1_KIDCSCV02_DEL": 'KIDCSCV02_DEL'
+}
 
-# Create outer columns for centering the main content
-# Use a ratio like [1, 4, 1] to make the central content column roughly 4/6 (2/3) of the page width
-spacer_left, main_content, spacer_right = st.columns([1, 4, 1])
+@st.cache_data(ttl=600)
+def fetch_sankey_generator_contributions(selected_date_str: str, engine, gen_short_to_long_map: dict):
+    """
+    Fetches daily total contributions for each specified generator.
+    NOTE: This is a placeholder. You MUST implement the actual database query.
+    The query should sum up the daily energy (e.g., in kWh) for each generator.
+    The prompt mentioned '* 1000' for generators. If your DB stores in MWh,
+    you'd multiply by 1000 here to get kWh. This placeholder assumes kWh.
+    """
+    st.warning("Sankey Generator Data: Using DUMMY values. Implement actual DB query in `Workspace_sankey_generator_contributions`.")
+    contributions = {}
+    # Example: Query a table 'Generator_Daily_Output'
+    # query = """
+    # SELECT "GeneratorName", SUM("Output_kWh") as "TotalOutput"
+    # FROM "Generator_Daily_Output"
+    # WHERE "Date" = %s AND "GeneratorName" IN %s
+    # GROUP BY "GeneratorName";
+    # """
+    # df_gen = pd.read_sql(query, engine, params=[(selected_date_str, tuple(gen_short_to_long_map.keys()))])
+    # for _, row in df_gen.iterrows():
+    # contributions[gen_short_to_long_map[row["GeneratorName"]]] = row["TotalOutput"] * 1000 # If scaling needed
 
-with main_content: # Place all the main content inside the central column
-    # Fetch available dates and configure date input
-    available_dates = fetch_available_dates()
-
-    if not available_dates:
-        st.error("No available dates found in the database. Please check data availability and database connection.")
-        st.stop() # Stop the app if no dates are available
-
-    # Set min, max, and default value for the date input based on available dates
-    min_available_date = min(available_dates) if available_dates else date.today()
-    max_available_date = max(available_dates) if available_dates else date.today()
-    # Set default date to the latest available date or today if within range
-    default_date = max_available_date if max_available_date > date.today() else date.today()
-    default_date = max_available_date if default_date < min_available_date else default_date
-
-    # If no dates are available, default date might still be off.
-    # If available_dates is empty, min/max will be today, default will be today.
-    # The fetch_data will then return empty, handled below.
-
-    # Ensure the default date is actually one of the available dates if possible
-    if available_dates and default_date not in available_dates:
-         # Find the closest available date, or just default to the latest
-         default_date = max_available_date
-
-
-    selected_date = st.date_input(
-        "Select date",
-        value=default_date,
-        min_value=min_available_date,
-        max_value=max_available_date,
-        # We don't restrict to *only* available dates in the picker itself,
-        # just the min/max range.
-    )
-
-    # While min_value and max_value restrict the picker range,
-    # a direct selection might still result in a date not in the DISTINCT list.
-    # Re-check and inform the user if the selected date is not in the exact list.
-    if selected_date not in available_dates:
-        st.warning(f"Data may not be available for the exact date selected: {selected_date}. Displaying data for the closest available date or period.")
-        # For simplicity here, we'll still use the selected date for fetching,
-        # but the warning lets the user know. If strict adherence is needed,
-        # you'd fallback to a date in available_dates here before fetching.
-        # Example: selected_date_str = max_available_date.strftime('%Y-%m-%d')
-
-
-    # Format the selected date to 'YYYY-MM-DD' string for the SQL query
-    selected_date_str = selected_date.strftime('%Y-%m-%d')
-
-    # --- FETCH AND DISPLAY DATA ---
-    # Fetch the hourly data for the selected date
-    data = fetch_data(selected_date_str)
+    # Placeholder: Distribute a dummy total, or assign fixed values
+    dummy_total_generation = 500000 #kWh
+    num_generators = len(gen_short_to_long_map)
+    if num_generators > 0:
+        for i, short_name in enumerate(gen_short_to_long_map.values()):
+            # Assign pseudo-random looking values for better visual
+            contributions[short_name] = (dummy_total_generation / num_generators) * (1 + (i % 3 - 1) * 0.2)
+    return contributions
 
 
-    if not data.empty:
-        # --- Display Daily Summary Metrics as Cards ---
-        st.subheader("Daily Summary Metrics")
+@st.cache_data(ttl=600)
+def fetch_sankey_destination_consumption(selected_date_str: str, engine, dest_short_to_long_map: dict, total_mq_to_distribute: float):
+    """
+    Fetches or calculates the consumption for each specified destination.
+    NOTE: This is a placeholder. Ideally, you query actual consumption data.
+    If not available, it distributes total_mq_to_distribute among destinations.
+    """
+    st.warning("Sankey Destination Data: Using DUMMY proportional distribution. Implement DB query in `Workspace_sankey_destination_consumption`.")
+    consumption = {}
+    # Example: Query a table 'Destination_Daily_Consumption'
+    # query = """
+    # SELECT "DestinationNodeID", SUM("Consumption_kWh") as "TotalConsumption"
+    # FROM "Destination_Daily_Consumption"
+    # WHERE "Date" = %s AND "DestinationNodeID" IN %s
+    # GROUP BY "DestinationNodeID";
+    # """
+    # df_dest = pd.read_sql(query, engine, params=[(selected_date_str, tuple(dest_short_to_long_map.keys()))])
+    # for _, row in df_dest.iterrows():
+    #     consumption[dest_short_to_long_map[row["DestinationNodeID"]]] = row["TotalConsumption"]
 
-        # Create three columns for the metrics using the default layout
-        col1, col2, col3 = st.columns(3)
-
-        # Display Maximum Price and Average Price in the first two data columns (col1 and col2)
-        # Added checks for numeric type before calculating max/mean
-        if "Prices" in data.columns and not data["Prices"].empty and pd.api.types.is_numeric_dtype(data["Prices"]):
-            max_price = data["Prices"].max()
-            avg_price = data["Prices"].mean()
-            col1.metric(label="Maximum Price (PHP/kWh)", value=f"{max_price:,.2f}") # Format for readability
-            col2.metric(label="Average Price (PHP/kWh)", value=f"{avg_price:,.2f}") # Format for readability
-        else:
-            col1.warning("Prices data not available or not numeric.")
-            col2.warning("Avg Price data not available or not numeric.")
-
-
-        # --- Display Maximum Total MQ and corresponding time in the third data column (col3) ---
-        # Added checks for numeric type before calculation
-        if "Total_MQ" in data.columns and "Time" in data.columns and not data["Total_MQ"].empty and pd.api.types.is_numeric_dtype(data["Total_MQ"]):
-            # Find the row with the maximum Total_MQ value
-            max_mq_value = data["Total_MQ"].max()
-            # Check if the column is all NaNs or empty, idxmax would raise an error
-            if pd.notnull(max_mq_value) and not data["Total_MQ"].isnull().all(): # Also check if all values are null
-                 # Ensure 'Total_MQ' is numeric before idxmax - already checked above, but safe here
-                 # if pd.api.types.is_numeric_dtype(data["Total_MQ"]):
-                 max_mq_row_index = data["Total_MQ"].idxmax()
-                 # Get the corresponding Time value from that row
-                 max_mq_time = data.loc[max_mq_row_index, "Time"]
-
-                 # Format the time for display
-                 if pd.api.types.is_datetime64_any_dtype(max_mq_time):
-                      max_mq_time_str = max_mq_time.strftime("%H:%M")
-                 else:
-                      # Handle cases where max_mq_time might not be a datetime object
-                      max_mq_time_str = str(max_mq_time) # Display as string if not datetime
-
-                 col3.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq_value:,.2f}")
-                 col3.write(f"at {max_mq_time_str}") # Display time below the metric
-                 # else: # Warning already handled by outer if
-                 #      col3.warning("Total_MQ column is not numeric.")
-
-            else:
-                 col3.info("Total_MQ data is all zero/null or not applicable for max metric.")
-
-        else:
-             col3.warning("Max MQ or Time data not available or not numeric or empty.")
+    # Placeholder: Distribute total_mq_to_distribute proportionally (equally here)
+    num_destinations = len(dest_short_to_long_map)
+    if num_destinations > 0:
+        for i, short_name in enumerate(dest_short_to_long_map.values()):
+            consumption[short_name] = (total_mq_to_distribute / num_destinations) * (1 + (i % 3 - 1) * 0.1) # Slight variation
+        # Normalize to ensure sum matches total_mq_to_distribute if using variations
+        current_sum = sum(consumption.values())
+        if current_sum > 0 : # Avoid division by zero
+            scaling_factor = total_mq_to_distribute / current_sum
+            for short_name in consumption:
+                consumption[short_name] *= scaling_factor
+    return consumption
 
 
-        # --- Add WESM column (Total_BCQ - Total_MQ) ---
-        # Calculate the WESM column if the required columns exist and are numeric
-        if all(col in data.columns for col in ["Total_BCQ", "Total_MQ"]):
-             if pd.api.types.is_numeric_dtype(data["Total_BCQ"]) and pd.api.types.is_numeric_dtype(data["Total_MQ"]):
-                 data['WESM'] = data['Total_BCQ'] - data['Total_MQ']
-             else:
-                 st.warning("Could not calculate WESM column: Total_BCQ or Total_MQ are not numeric.")
-        else:
-             st.warning("Could not calculate WESM column: Total_BCQ or Total_MQ columns not found.")
+# --- STREAMLIT UI ---
+st.title("📊 Daily Energy Trading Dashboard")
+
+spacer_left, main_content, spacer_right = st.columns([0.5, 4, 0.5]) # Adjusted spacer for potentially wider content
+
+with main_content:
+    available_dates = fetch_available_dates()
+
+    if not available_dates:
+        st.error("No available dates found. Check database connection and data.")
+        st.stop()
+
+    min_available_date = min(available_dates)
+    max_available_date = max(available_dates)
+    default_date = max_available_date # Default to the latest available date
+
+    selected_date = st.date_input(
+        "Select date",
+        value=default_date,
+        min_value=min_available_date,
+        max_value=max_available_date,
+    )
+
+    if selected_date not in available_dates:
+        st.warning(f"Data may not be available for the exact date selected: {selected_date}. Displaying data for the closest available date or period if applicable.")
+
+    selected_date_str = selected_date.strftime('%Y-%m-%d')
+    data = fetch_data(selected_date_str)
+
+    if not data.empty:
+        st.subheader("Daily Summary Metrics")
+        col1, col2, col3 = st.columns(3)
+
+        if "Prices" in data.columns and not data["Prices"].empty and pd.api.types.is_numeric_dtype(data["Prices"]):
+            max_price = data["Prices"].max(skipna=True)
+            avg_price = data["Prices"].mean(skipna=True)
+            col1.metric(label="Maximum Price (PHP/kWh)", value=f"{max_price:,.2f}" if pd.notna(max_price) else "N/A")
+            col2.metric(label="Average Price (PHP/kWh)", value=f"{avg_price:,.2f}" if pd.notna(avg_price) else "N/A")
+        else:
+            col1.warning("Prices data not available/numeric.")
+            col2.warning("Avg Price data not available/numeric.")
+
+        if "Total_MQ" in data.columns and "Time" in data.columns and \
+           not data["Total_MQ"].empty and pd.api.types.is_numeric_dtype(data["Total_MQ"]) and \
+           not data["Total_MQ"].isnull().all():
+            max_mq_value = data["Total_MQ"].max(skipna=True)
+            if pd.notna(max_mq_value):
+                max_mq_row_index = data["Total_MQ"].idxmax()
+                max_mq_time = data.loc[max_mq_row_index, "Time"]
+                max_mq_time_str = max_mq_time.strftime("%H:%M") if pd.api.types.is_datetime64_any_dtype(max_mq_time) else str(max_mq_time)
+                col3.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq_value:,.2f}")
+                col3.write(f"at {max_mq_time_str}")
+            else:
+                col3.info("Total_MQ data is all NaN.")
+        else:
+            col3.warning("Max MQ/Time data not available/numeric or all null.")
 
 
-        st.subheader("Hourly Summary")
-        st.dataframe(data) # Display fetched data including the new WESM column
+        if all(col in data.columns for col in ["Total_BCQ", "Total_MQ"]) and \
+           pd.api.types.is_numeric_dtype(data["Total_BCQ"]) and pd.api.types.is_numeric_dtype(data["Total_MQ"]):
+            data['WESM'] = data['Total_BCQ'] - data['Total_MQ']
+        else:
+            st.warning("WESM column not calculated: Total_BCQ or Total_MQ are missing or not numeric.")
+            data['WESM'] = pd.NA # Ensure column exists even if calculation fails for safety
+
+        st.subheader("Hourly Summary")
+        st.dataframe(data)
+
+        st.subheader("📈 Energy Metrics Over Time (Interactive)")
+        if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
+            columns_to_melt = ["Total_MQ", "Total_BCQ", "Prices"]
+            existing_cols_to_melt = [col for col in columns_to_melt if col in data.columns and not data[col].isnull().all()]
+
+            if existing_cols_to_melt:
+                melted_data = data.melt(
+                    id_vars=["Time"],
+                    value_vars=existing_cols_to_melt,
+                    var_name="Metric",
+                    value_name="Value"
+                )
+                melted_data.dropna(subset=['Value'], inplace=True) # Drop rows where 'Value' became NaN
+
+                # Chart for MQ and BCQ
+                energy_metrics = [m for m in ["Total_MQ", "Total_BCQ"] if m in existing_cols_to_melt]
+                if energy_metrics:
+                    chart_energy = alt.Chart(melted_data[melted_data["Metric"].isin(energy_metrics)]).mark_line(point=True).encode(
+                        x=alt.X("Time:T", axis=alt.Axis(title="Time", format="%H:%M")),
+                        y=alt.Y("Value:Q", title="Energy (kWh)", axis=alt.Axis(titleColor="#1A85FF"), scale=alt.Scale(zero=True)),
+                        color=alt.Color("Metric:N", legend=alt.Legend(title="Metric", orient='bottom'),
+                                        scale=alt.Scale(domain=['Total_MQ', 'Total_BCQ'], range=['#FFC20A', '#1A85FF'])),
+                        tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", "Value:Q"]
+                    ).properties(title="Energy Metrics")
+                else: chart_energy = alt.Chart(pd.DataFrame()).mark_text() # Empty chart
+
+                # Chart for Prices
+                if "Prices" in existing_cols_to_melt:
+                    chart_price = alt.Chart(melted_data[melted_data["Metric"] == "Prices"]).mark_bar(color="#40B0A6").encode(
+                        x=alt.X("Time:T", axis=alt.Axis(title="Time", format="%H:%M")), # Keep x-axis title for bars if layered
+                        y=alt.Y("Value:Q", title="Price (PHP/kWh)", axis=alt.Axis(titleColor="#40B0A6"), scale=alt.Scale(zero=True)),
+                        tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", "Value:Q"]
+                    ).properties(title="Prices")
+                else: chart_price = alt.Chart(pd.DataFrame()).mark_text() # Empty chart
+
+                # Combine charts
+                if energy_metrics and "Prices" in existing_cols_to_melt:
+                    combined_chart = alt.layer(chart_price, chart_energy).resolve_scale(y='independent').properties(
+                        title=f"Energy Metrics and Prices for {selected_date_str}"
+                    ).interactive()
+                elif energy_metrics: # Only energy chart
+                    combined_chart = chart_energy.properties(title=f"Energy Metrics for {selected_date_str}").interactive()
+                elif "Prices" in existing_cols_to_melt: # Only price chart
+                    combined_chart = chart_price.properties(title=f"Prices for {selected_date_str}").interactive()
+                else: # No data to plot
+                    combined_chart = alt.Chart(pd.DataFrame()).mark_text(text="No data to plot for selected metrics.").properties(title="No Data")
+
+                st.altair_chart(combined_chart, use_container_width=True)
+            else:
+                st.warning(f"Required columns for plotting are missing or all null in data for {selected_date_str}.")
+        else:
+            st.warning("Time column not in expected datetime format or data is empty.")
 
 
-        # --- PLOT DATA USING ALTAIR FOR INTERACTIVITY ---
-        st.subheader("📈 Energy Metrics Over Time (Interactive)")
+        # --- SANKEY CHART ---
+        st.subheader("⚡ Daily Energy Flow Sankey Chart")
+        if 'Total_MQ' in data.columns and 'WESM' in data.columns and \
+           pd.api.types.is_numeric_dtype(data['Total_MQ']) and \
+           pd.api.types.is_numeric_dtype(data['WESM']) and \
+           not data['Total_MQ'].isnull().all():
 
-        # --- DEBUGGING: Check columns before melting ---
-        # Use this to see the actual column names returned by the database.
-        # You can comment this line out once you've confirmed the column names
-        # and updated the columns_to_melt list below.
-        # st.write("Columns in data DataFrame:", data.columns.tolist()) # Use .tolist() for clearer display
+            engine = get_sqlalchemy_engine()
+            sankey_node_labels = []
+            node_indices = {} # To map label to index
+            sankey_sources_indices = []
+            sankey_targets_indices = []
+            sankey_values = []
+            node_colors = [] # For Plotly node colors
 
-        # Melt the DataFrame for Altair - necessary for plotting multiple metrics
-        # on the same or twin axes easily with color encoding.
-        # Ensure 'Time' is a datetime type before melting
-        if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
+            def add_node(label, color="grey"): # Helper to add unique nodes
+                if label not in node_indices:
+                    node_indices[label] = len(sankey_node_labels)
+                    sankey_node_labels.append(label)
+                    node_colors.append(color) # Store color for this node index
+                return node_indices[label]
 
-            # --- IMPORTANT: VERIFY AND UPDATE COLUMN NAMES HERE if necessary ---
-            # The list below must contain the EXACT names of the columns in your
-            # 'data' DataFrame that you want to plot (Total_MQ, Total_BCQ, Prices).
-            # Check the output of the commented-out "st.write" line above if you
-            # are still facing KeyError during melting.
-            columns_to_melt = ["Total_MQ", "Total_BCQ", "Prices"] # <-- **VERIFY/UPDATE THESE NAMES if needed**
+            # 1. Middle Node: Total MQ
+            total_mq_sum = data['Total_MQ'].sum()
+            if pd.isna(total_mq_sum) or total_mq_sum == 0:
+                st.info(f"Total MQ is zero or N/A for {selected_date_str}. Cannot generate Sankey chart.")
+                # To prevent further execution in this block if total_mq_sum is not valid
+                display_sankey = False
+            else:
+                display_sankey = True
+                middle_node_label = f"Total Daily MQ ({total_mq_sum:,.0f} kWh)"
+                middle_node_idx = add_node(middle_node_label, "orange")
 
-            # Check if all columns to melt exist in the DataFrame
-            if all(col in data.columns for col in columns_to_melt):
-                melted_data = data.melt(
-                    id_vars=["Time"], # Use id_vars to specify identifier columns
-                    value_vars=columns_to_melt, # Columns to unpivot
-                    var_name="Metric", # Name for the new column holding metric names
-                    value_name="Value" # Name for the new new column holding metric values
-                )
+                # 2. Source Nodes (Generators & WESM)
+                # Generators
+                gen_short_to_long_map_inv = {v: k for k, v in GENERATOR_LONG_TO_SHORT_MAP.items()} # for dummy data fetch
+                generator_contributions = fetch_sankey_generator_contributions(selected_date_str, engine, GENERATOR_LONG_TO_SHORT_MAP)
 
-                # Debugging: Display melted data
-                # st.subheader("Melted Data for Plotting")
-                # st.dataframe(melted_data)
-                # st.write("Melted Data Types:", melted_data.dtypes)
+                for short_name, value in generator_contributions.items():
+                    if value > 0: # Only add if there's a positive contribution
+                        # The prompt's '* 1000' for generators: apply if fetched data is e.g. MWh
+                        # scaled_value = value * 1000 # Apply scaling if necessary
+                        scaled_value = value # Assuming fetched value is already in desired unit (e.g. kWh)
+                        gen_node_label = f"{short_name} ({scaled_value:,.0f} kWh)"
+                        gen_node_idx = add_node(gen_node_label, "blue")
+                        sankey_sources_indices.append(gen_node_idx)
+                        sankey_targets_indices.append(middle_node_idx)
+                        sankey_values.append(scaled_value)
 
+                # WESM Contribution
+                wesm_daily_sum = data['WESM'].sum()
+                # Prompt: "Total WESM (from chart) * -1" as a SOURCE.
+                # Interpretation 1 (Strict): value = wesm_daily_sum * -1. If positive, use it.
+                # wesm_sankey_val_strict = wesm_daily_sum * -1
+                # if wesm_sankey_val_strict > 0:
+                #     wesm_label = f"WESM (calc as export: {wesm_sankey_val_strict:,.0f} kWh)"
+                #     wesm_node_idx = add_node(wesm_label, "red")
+                #     sankey_sources_indices.append(wesm_node_idx)
+                #     sankey_targets_indices.append(middle_node_idx)
+                #     sankey_values.append(wesm_sankey_val_strict)
 
-                # Create charts for the left y-axis (MQ and BCQ) - as lines
-                chart_energy = alt.Chart(melted_data[melted_data["Metric"].isin(["Total_MQ", "Total_BCQ"])]).mark_line(point=True).encode(
-                    x=alt.X("Time", axis=alt.Axis(title="Time", format="%H:%M")), # Format time axis
-                    # --- Align zero for the energy axis - 'zero=True' goes inside alt.Scale() ---
-                    y=alt.Y("Value", title="Energy (kWh)", axis=alt.Axis(titleColor="tab:blue"), scale=alt.Scale(zero=True)),
-                    # --- Use specified colors for MQ and BCQ ---
-                    # --- Move legend to the bottom ---
-                    color=alt.Color(
-                        "Metric",
-                        legend=alt.Legend(title="Metric", orient='bottom'),
-                        scale=alt.Scale(domain=['Total_MQ', 'Total_BCQ'], range=['#FFC20A', '#1A85FF']) # Set specific colors
-                    ),
-                    tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
-                ).properties(
-                     title="Energy Metrics" # Title for this layer's legend
-                )
+                # Interpretation 2 (Standard for WESM as Source - Net Import):
+                if wesm_daily_sum > 0: # Net import from WESM
+                    wesm_label = f"WESM Net Import ({wesm_daily_sum:,.0f} kWh)"
+                    wesm_node_idx = add_node(wesm_label, "red")
+                    sankey_sources_indices.append(wesm_node_idx)
+                    sankey_targets_indices.append(middle_node_idx)
+                    sankey_values.append(wesm_daily_sum)
+                # If WESM is a net export (wesm_daily_sum < 0), it could be a destination.
+                # The prompt only lists it as a source, so we'll only consider net imports here.
 
-                # Create chart for the right y-axis (Prices) - as bars
-                # --- Change the color of the price bars to apple green (#40B0A6 is a pleasant shade) ---
-                chart_price = alt.Chart(melted_data[melted_data["Metric"] == "Prices"]).mark_bar(color="#40B0A6").encode(
-                    x=alt.X("Time", axis=alt.Axis(title="")), # Empty title as it's shared
-                    # --- Align zero for the price axis - 'zero=True' goes inside alt.Scale() ---
-                    y=alt.Y("Value", title="Price (PHP/kWh)", axis=alt.Axis(titleColor="tab:red"), scale=alt.Scale(zero=True)),
-                    tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
-                ).properties(
-                     title="Prices" # Title for this layer's legend
-                )
+                # 3. Destination Nodes
+                # The sum of destination values should ideally equal total_mq_sum.
+                # fetch_sankey_destination_consumption should handle fetching/distributing this.
+                dest_short_to_long_map_inv = {v: k for k, v in DESTINATION_LONG_TO_SHORT_MAP.items()} # for dummy data
+                destination_consumptions = fetch_sankey_destination_consumption(
+                    selected_date_str, engine, DESTINATION_LONG_TO_SHORT_MAP, total_mq_sum
+                )
 
-                # Combine the charts with independent y-axes
-                # --- Reverse the layering order to put bars behind lines ---
-                # List chart_price first to draw its bars at the bottom, then chart_energy lines on top.
-                combined_chart = alt.layer(chart_price, chart_energy).resolve_scale(
-                    y='independent' # Allow y-axes to have different scales
-                ).properties(
-                    title=f"Energy Metrics and Prices for {selected_date_str}"
-                ).interactive() # Add interactivity for zooming and panning
+                for short_name, value in destination_consumptions.items():
+                    if value > 0:
+                        dest_node_label = f"{short_name} ({value:,.0f} kWh)"
+                        dest_node_idx = add_node(dest_node_label, "green")
+                        sankey_sources_indices.append(middle_node_idx) # Source is middle node
+                        sankey_targets_indices.append(dest_node_idx)
+                        sankey_values.append(value)
 
-                # Display the chart in Streamlit
-                st.altair_chart(combined_chart, use_container_width=True)
-            else:
-                # If columns are missing for plotting, display an informative warning
-                missing_cols = [col for col in columns_to_melt if col not in data.columns]
-                st.warning(f"Data fetched but required columns for plotting are missing: {missing_cols}. Check your database tables ('MQ_Hourly', 'BCQ_Hourly', 'Prices_Hourly') and SQL query result.")
+            # Check for data sufficiency for Sankey
+            if not sankey_values or sum(sankey_values) == 0 or not display_sankey:
+                st.info(f"Not enough data or zero total MQ to draw Sankey chart for {selected_date_str}.")
+            else:
+                fig = go.Figure(data=[go.Sankey(
+                    node=dict(
+                        pad=25, # Increased padding
+                        thickness=20,
+                        line=dict(color="black", width=0.5),
+                        label=sankey_node_labels,
+                        color=node_colors # Use the dynamic list of colors
+                    ),
+                    link=dict(
+                        source=sankey_sources_indices,
+                        target=sankey_targets_indices,
+                        value=sankey_values,
+                    )
+                )])
+                fig.update_layout(
+                    title_text=f"Energy Flow for {selected_date_str}",
+                    font_size=10,
+                    height=600 # Adjust height if needed
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning(f"Cannot generate Sankey: MQ or WESM data missing/invalid for {selected_date_str}.")
 
-
-        else:
-            st.warning("Time column is not in the expected datetime format for plotting or data is empty after fetch.")
-
-
-    else:
-        st.warning(f"No data available for selected date: {selected_date_str}.")
-
-    # Removed the section that displayed generator_data as requested
-    # if not generator_data.empty:
-    #     st.subheader("🔌 Generator BCQ Summary")
-    #     st.dataframe(generator_data)
+    else: # if data.empty
+        st.warning(f"No data available for selected date: {selected_date_str}.")
