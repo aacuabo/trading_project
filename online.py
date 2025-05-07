@@ -14,10 +14,6 @@ st.set_page_config(layout="wide") # Use wide layout for better display
 
 # Removed: --- User Authentication ---
 # Removed: Loading of authentication credentials and cookie from secrets
-# Removed: Initialize the authenticator
-# Removed: Add the login widget at the top of the main area
-# Removed: Display content based on authentication status blocks (if/elif)
-
 
 # --- DATABASE CONFIGURATION ---
 @st.cache_resource # Cache the database engine creation
@@ -110,40 +106,11 @@ def fetch_data(selected_date_str: str): # Added type hint for caching key
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=600) # Cache entity sums for 10 minutes
-def fetch_bcq_entity_sums(selected_date_str: str): # Added type hint for caching key
-     """Fetches the daily sum of BCQ for specific entities from BCQ_Hourly."""
-     try:
-         engine = get_sqlalchemy_engine()
-         # Assuming these are the exact column names in BCQ_Hourly
-         query = f"""
-             SELECT
-                 SUM("FDC Misamis Power Corporation (FDC)") AS "FDC",
-                 SUM("GNPower Kauswagan Ltd. Co. (GNPKLCO)") AS "GNPK",
-                 SUM("Power Sector Assets & Liabilities Management Corporation (PSALMGMIN)") AS "PSALM",
-                 SUM("Sarangani Energy Corporation (SEC)") AS "SEC",
-                 SUM("Therma South, Inc. (TSI)") AS "TSI",
-                 SUM("Malita Power Inc. (SMCPC)") AS "MPI"
-             FROM
-                 "BCQ_Hourly"
-             WHERE
-                 "Date" = %s;
-         """
-         # Pass parameters as a list containing a tuple
-         df = pd.read_sql(query, engine, params=[(selected_date_str,)])
-
-         # Ensure columns are numeric after summing
-         for col in ["FDC", "GNPK", "PSALM", "SEC", "TSI", "MPI"]:
-             if col in df.columns:
-                 df[col] = pd.to_numeric(df[col], errors='coerce')
-
-         return df
-     except Exception as e:
-         st.error(f"Error fetching BCQ entity sums: {e}")
-         return pd.DataFrame()
-
-
 # --- STREAMLIT UI (Now always displayed) ---
+
+# Removed: Login widget
+# Removed: Display content based on authentication status blocks (if/elif)
+# Removed: Logout button
 
 st.title("📊 Daily Energy Trading Dashboard") # Main title
 
@@ -185,10 +152,15 @@ with main_content: # Place all the main content inside the central column
         # just the min/max range.
     )
 
-    # Optional: Re-check if the selected date is in the list of available dates
-    # if available_dates and selected_date not in available_dates:
-    #     st.warning(f"Data may not be available for the exact date selected: {selected_date}. Displaying data for the closest available date or period.")
-        # You might want to change selected_date here to an available date before fetching
+    # While min_value and max_value restrict the picker range,
+    # a direct selection might still result in a date not in the DISTINCT list.
+    # Re-check and inform the user if the selected date is not in the exact list.
+    if selected_date not in available_dates:
+        st.warning(f"Data may not be available for the exact date selected: {selected_date}. Displaying data for the closest available date or period.")
+        # For simplicity here, we'll still use the selected date for fetching,
+        # but the warning lets the user know. If strict adherence is needed,
+        # you'd fallback to a date in available_dates here before fetching.
+        # Example: selected_date_str = max_available_date.strftime('%Y-%m-%d')
 
 
     # Format the selected date to 'YYYY-MM-DD' string for the SQL query
@@ -198,8 +170,6 @@ with main_content: # Place all the main content inside the central column
     # Fetch the hourly data for the selected date
     data = fetch_data(selected_date_str)
 
-    # Fetch the entity specific BCQ sums
-    entity_sums_df = fetch_bcq_entity_sums(selected_date_str)
 
     if not data.empty:
         # --- Display Daily Summary Metrics as Cards ---
@@ -252,7 +222,7 @@ with main_content: # Place all the main content inside the central column
              col3.warning("Max MQ or Time data not available or not numeric or empty.")
 
 
-        # --- Add WESM column (Total_BCQ - Total_MQ) to Hourly Summary ---
+        # --- Add WESM column (Total_BCQ - Total_MQ) ---
         # Calculate the WESM column if the required columns exist and are numeric
         if all(col in data.columns for col in ["Total_BCQ", "Total_MQ"]):
              if pd.api.types.is_numeric_dtype(data["Total_BCQ"]) and pd.api.types.is_numeric_dtype(data["Total_MQ"]):
@@ -267,92 +237,90 @@ with main_content: # Place all the main content inside the central column
         st.dataframe(data) # Display fetched data including the new WESM column
 
 
-        # --- Create and Display BCQ Entity Pie Chart with WESM ---
-        st.subheader("BCQ Contribution and WESM")
+        # --- PLOT DATA USING ALTAIR FOR INTERACTIVITY ---
+        st.subheader("📈 Energy Metrics Over Time (Interactive)")
 
-        # Prepare data for the pie chart
-        pie_chart_data = pd.DataFrame(columns=['Entity', 'Sum'])
+        # --- DEBUGGING: Check columns before melting ---
+        # Use this to see the actual column names returned by the database.
+        # You can comment this line out once you've confirmed the column names
+        # and updated the columns_to_melt list below.
+        # st.write("Columns in data DataFrame:", data.columns.tolist()) # Use .tolist() for clearer display
 
-        if not entity_sums_df.empty:
-             # Melt the entity sums dataframe
-             # Use .iloc[0] to get the single row as a Series
-             melted_entity_sums = entity_sums_df.iloc[0].melt(var_name='Entity', value_name='Sum')
-             # Append to pie chart data
-             pie_chart_data = pd.concat([pie_chart_data, melted_entity_sums], ignore_index=True)
+        # Melt the DataFrame for Altair - necessary for plotting multiple metrics
+        # on the same or twin axes easily with color encoding.
+        # Ensure 'Time' is a datetime type before melting
+        if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
+
+            # --- IMPORTANT: VERIFY AND UPDATE COLUMN NAMES HERE if necessary ---
+            # The list below must contain the EXACT names of the columns in your
+            # 'data' DataFrame that you want to plot (Total_MQ, Total_BCQ, Prices).
+            # Check the output of the commented-out "st.write" line above if you
+            # are still facing KeyError during melting.
+            columns_to_melt = ["Total_MQ", "Total_BCQ", "Prices"] # <-- **VERIFY/UPDATE THESE NAMES if needed**
+
+            # Check if all columns to melt exist in the DataFrame
+            if all(col in data.columns for col in columns_to_melt):
+                melted_data = data.melt(
+                    id_vars=["Time"], # Use id_vars to specify identifier columns
+                    value_vars=columns_to_melt, # Columns to unpivot
+                    var_name="Metric", # Name for the new column holding metric names
+                    value_name="Value" # Name for the new new column holding metric values
+                )
+
+                # Debugging: Display melted data
+                # st.subheader("Melted Data for Plotting")
+                # st.dataframe(melted_data)
+                # st.write("Melted Data Types:", melted_data.dtypes)
 
 
-        # Calculate daily Total_BCQ and Total_MQ for WESM
-        daily_total_bcq = 0
-        daily_total_mq = 0
-        if "Total_BCQ" in data.columns and pd.api.types.is_numeric_dtype(data["Total_BCQ"]):
-             daily_total_bcq = data["Total_BCQ"].sum()
-        if "Total_MQ" in data.columns and pd.api.types.is_numeric_dtype(data["Total_MQ"]):
-             daily_total_mq = data["Total_MQ"].sum()
+                # Create charts for the left y-axis (MQ and BCQ) - as lines
+                chart_energy = alt.Chart(melted_data[melted_data["Metric"].isin(["Total_MQ", "Total_BCQ"])]).mark_line(point=True).encode(
+                    x=alt.X("Time", axis=alt.Axis(title="Time", format="%H:%M")), # Format time axis
+                    # --- Align zero for the energy axis - 'zero=True' goes inside alt.Scale() ---
+                    y=alt.Y("Value", title="Energy (kWh)", axis=alt.Axis(titleColor="tab:blue"), scale=alt.Scale(zero=True)),
+                    # --- Use specified colors for MQ and BCQ ---
+                    # --- Move legend to the bottom ---
+                    color=alt.Color(
+                        "Metric",
+                        legend=alt.Legend(title="Metric", orient='bottom'),
+                        scale=alt.Scale(domain=['Total_MQ', 'Total_BCQ'], range=['#FFC20A', '#1A85FF']) # Set specific colors
+                    ),
+                    tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
+                ).properties(
+                     title="Energy Metrics" # Title for this layer's legend
+                )
 
-        # Calculate WESM (Total_BCQ - Total_MQ) / -1000
-        wesm_value = 0
-        try:
-            # Check if the divisor is zero before division
-            if -1000 != 0:
-                wesm_value = (daily_total_bcq - daily_total_mq) / -1000
+                # Create chart for the right y-axis (Prices) - as bars
+                # --- Change the color of the price bars to apple green (#40B0A6 is a pleasant shade) ---
+                chart_price = alt.Chart(melted_data[melted_data["Metric"] == "Prices"]).mark_bar(color="#40B0A6").encode(
+                    x=alt.X("Time", axis=alt.Axis(title="")), # Empty title as it's shared
+                    # --- Align zero for the price axis - 'zero=True' goes inside alt.Scale() ---
+                    y=alt.Y("Value", title="Price (PHP/kWh)", axis=alt.Axis(titleColor="tab:red"), scale=alt.Scale(zero=True)),
+                    tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", "Value"] # Add tooltips with formatted time
+                ).properties(
+                     title="Prices" # Title for this layer's legend
+                )
+
+                # Combine the charts with independent y-axes
+                # --- Reverse the layering order to put bars behind lines ---
+                # List chart_price first to draw its bars at the bottom, then chart_energy lines on top.
+                combined_chart = alt.layer(chart_price, chart_energy).resolve_scale(
+                    y='independent' # Allow y-axes to have different scales
+                ).properties(
+                    title=f"Energy Metrics and Prices for {selected_date_str}"
+                ).interactive() # Add interactivity for zooming and panning
+
+                # Display the chart in Streamlit
+                st.altair_chart(combined_chart, use_container_width=True)
             else:
-                 st.warning("Cannot calculate WESM (division by zero).")
-                 wesm_value = 0 # Set to 0 if division is not possible
-        except Exception as e: # Catch any other potential errors during WESM calculation
-            st.error(f"Error calculating WESM: {e}")
-            wesm_value = 0 # Set to 0 on error
+                # If columns are missing for plotting, display an informative warning
+                missing_cols = [col for col in columns_to_melt if col not in data.columns]
+                st.warning(f"Data fetched but required columns for plotting are missing: {missing_cols}. Check your database tables ('MQ_Hourly', 'BCQ_Hourly', 'Prices_Hourly') and SQL query result.")
 
 
-        # Add WESM to the pie chart data
-        # Only add if there's other data or WESM is non-zero
-        # Use a small tolerance for checking if WESM is effectively zero
-        if not pie_chart_data.empty or abs(wesm_value) > 1e-9:
-            wesm_row = pd.DataFrame([{'Entity': 'WESM', 'Sum': wesm_value}])
-            pie_chart_data = pd.concat([pie_chart_data, wesm_row], ignore_index=True)
-
-
-        # Ensure the 'Sum' column is numeric before plotting
-        if 'Sum' in pie_chart_data.columns:
-            pie_chart_data['Sum'] = pd.to_numeric(pie_chart_data['Sum'], errors='coerce').fillna(0)
-            # Filter out entities with zero or NaN sum, unless it's WESM and non-zero
-            pie_chart_data = pie_chart_data[
-                (pie_chart_data['Sum'] != 0) |
-                (pie_chart_data['Entity'] == 'WESM')
-            ]
-            # Ensure WESM is included if its value is non-zero, even if other sums are zero
-            if 'WESM' in pie_chart_data['Entity'].tolist() and abs(wesm_value) > 1e-9 and 'WESM' not in pie_chart_data[pie_chart_data['Sum'] != 0]['Entity'].tolist():
-                wesm_only_df = pd.DataFrame([{'Entity': 'WESM', 'Sum': wesm_value}])
-                # Concatenate, making sure to not duplicate WESM if it was already included due to its value
-                pie_chart_data = pd.concat([pie_chart_data[pie_chart_data['Entity'] != 'WESM'], wesm_only_df], ignore_index=True)
-
-
-        if not pie_chart_data.empty:
-            # Create the pie chart
-            base = alt.Chart(pie_chart_data).encode(
-                theta=alt.Theta("Sum", stack=True) # Use Sum for the angle of slices
-            )
-
-            # Specify the outer radius of the arcs and encode color based on the entity
-            pie = base.mark_arc(outerRadius=120).encode(
-                color=alt.Color("Entity"),
-                # Order the arcs by `Sum` in descending order.
-                order=alt.Order("Sum", sort="descending"),
-                tooltip=["Entity", alt.Tooltip("Sum", format=",.1f")] # Add tooltips for Entity and Sum
-            )
-
-            # Add text labels
-            text = base.mark_text(radius=140).encode( # Adjust radius to position text outside slices
-                text=alt.Text("Entity"), # Use Entity name as the label
-                order=alt.Order("Sum", sort="descending"),
-                color=alt.value("black") # Set the color of the labels
-            )
-
-            # Combine the pie chart and text
-            chart = pie + text
-
-            st.altair_chart(chart, use_container_width=True)
         else:
-            st.info("Not enough data to display the BCQ contribution pie chart.")
+            st.warning("Time column is not in the expected datetime format for plotting or data is empty after fetch.")
+
 
     else:
         st.warning(f"No data available for selected date: {selected_date_str}.")
@@ -361,5 +329,3 @@ with main_content: # Place all the main content inside the central column
     # if not generator_data.empty:
     #     st.subheader("🔌 Generator BCQ Summary")
     #     st.dataframe(generator_data)
-
-    # --- End of main app content ---
