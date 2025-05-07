@@ -119,6 +119,7 @@ def fetch_data(selected_date_str: str): # Added type hint for caching key
         if "Total_BCQ" in bcq_cols_raw and "Total_BCQ" not in BCQ_SOURCE_MAP.values():
              select_cols.append('bcq."Total_BCQ"') # Add it without aliasing
 
+
         select_cols.extend([f'p.{col}' for col in price_cols_quoted])
 
 
@@ -135,7 +136,8 @@ def fetch_data(selected_date_str: str): # Added type hint for caching key
         """
 
         # Use parse_dates for known datetime columns
-        df = pd.read_sql(query, engine, params=[selected_date_str], parse_dates=["Date", "Time"])
+        # Fix: Corrected params usage - wrap the single parameter in a tuple
+        df = pd.read_sql(query, engine, params=[(selected_date_str,)], parse_dates=["Date", "Time"])
 
         # Ensure Time is treated as a datetime object by combining with Date if necessary
         if not df.empty and 'Date' in df.columns and 'Time' in df.columns:
@@ -160,7 +162,7 @@ def fetch_data(selected_date_str: str): # Added type hint for caching key
 
         # Ensure all fetched columns are numeric where expected, coercing errors to NaN
         # Use the raw MQ column names and the ALIASED BCQ column names for DataFrame operations
-        all_numeric_cols = mq_cols_raw + list(BCQ_SOURCE_MAP.values()) + price_cols_raw # Use values() for BCQ aliases
+        all_numeric_cols = list(MQ_DEST_MAP.keys()) + ["Total_MQ"] + list(BCQ_SOURCE_MAP.values()) + ["Total_BCQ"] + price_cols_raw # Use values() for BCQ aliases, include totals
         for col in all_numeric_cols:
              if col in df.columns:
                   df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -175,8 +177,15 @@ def fetch_data(selected_date_str: str): # Added type hint for caching key
         st.error(f"Error fetching data: {e}")
         # Provide more specific error message if a column might be missing
         if "column" in str(e) and "does not exist" in str(e):
-             missing_col_hint = str(e).split('"')[-2] # Attempt to extract the column name
-             st.error(f"Database column '{missing_col_hint}' not found. Ensure column names in your database tables match the names specified in the code for MQ Units and BCQ Generators.")
+             # Attempt to extract the column name from the error message
+             import re
+             match = re.search(r'column "([^"]+)" does not exist', str(e))
+             if match:
+                 missing_col_hint = match.group(1)
+                 st.error(f"Database column '{missing_col_hint}' not found. Ensure column names in your database tables match the names specified in the code for MQ Units and BCQ Generators.")
+             else:
+                 st.error(f"A database column was not found. Ensure column names in your database tables match the names specified in the code for MQ Units and BCQ Generators. Original error: {e}")
+
         return pd.DataFrame()
 
 
