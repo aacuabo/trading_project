@@ -24,7 +24,7 @@ def get_sqlalchemy_engine():
 
         url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
         # Use pool_pre_ping=True to handle potential disconnections
-        engine = create_engine(url, pool_pre_ping=True) # Corrected typo here
+        engine = create_engine(url, pool_pre_ping=True)
         return engine
     except KeyError as e:
         st.error(f"Error loading database credentials: {e}. Make sure your .streamlit/secrets.toml file is correctly configured with [database] section and keys: user, password, host, db, port.")
@@ -108,7 +108,7 @@ def fetch_data(selected_date_str: str): # Added type hint for caching key
         # Select columns, aliasing the BCQ columns to their simpler names for easier pandas handling
         select_cols = [f'mq.{col}' for col in mq_cols_quoted]
 
-        # Corrected logic for aliasing BCQ columns to avoid SyntaxError
+        # Corrected logic for aliasing BCQ columns
         for raw_col, alias in BCQ_SOURCE_MAP.items():
             quoted_col = f'"{raw_col}"' # Get the quoted version of the raw column name
             # Add the select statement with alias: bcq."Raw Column Name" AS "Alias"
@@ -135,7 +135,6 @@ def fetch_data(selected_date_str: str): # Added type hint for caching key
         """
 
         # Use parse_dates for known datetime columns
-        # Fix 3: Corrected params usage
         df = pd.read_sql(query, engine, params=[selected_date_str], parse_dates=["Date", "Time"])
 
         # Ensure Time is treated as a datetime object by combining with Date if necessary
@@ -322,15 +321,15 @@ with main_content: # Place all the main content inside the central column
 
         st.info("""
             This Sankey diagram visualizes a conceptual energy flow based on your specified components and formula.
-            Flows originate from individual BCQ Generators and WESM, combine into a 'Combined Input' node scaled per your formula,
+            Flows originate from individual BCQ Generators and WESM, combine into 'Total BCQ',
             and then distribute proportionally to individual MQ Units.
-            Note: The link values are derived from the daily sums and your scaling formula, not direct individual flows.
         """)
 
         # Calculate daily sums for individual components and totals
         daily_sums = {}
         # Use raw column names from the dictionaries as keys to access DataFrame columns
-        all_component_cols_raw = list(BCQ_SOURCE_MAP.keys()) + list(MQ_DEST_MAP.keys()) + ['Total_BCQ', 'Total_MQ', 'WESM']
+        # Include WESM and Total_BCQ as they are nodes/involved in sums
+        all_component_cols_raw = list(BCQ_SOURCE_MAP.keys()) + list(MQ_DEST_MAP.keys()) + ['Total_BCQ', 'WESM']
 
         for col in all_component_cols_raw:
             # Check if column exists and is numeric before summing
@@ -341,26 +340,17 @@ with main_content: # Place all the main content inside the central column
 
 
         daily_total_bcq_sum = daily_sums.get('Total_BCQ', 0)
-        daily_total_mq_sum = daily_sums.get('Total_MQ', 0)
         daily_wesm_sum = daily_sums.get('WESM', 0)
-
-        # Calculate the value of the RHS of the user's equation for context
-        rhs_equation_value = (daily_total_bcq_sum * 1000) - daily_wesm_sum
-
-        st.write(f"Daily Total MQ (Sum of Destinations): {daily_total_mq_sum:,.2f} kWh")
-        st.write(f"Daily Total BCQ (Sum of Sources): {daily_total_bcq_sum:,.2f} kWh")
-        st.write(f"Daily Total WESM: {daily_wesm_sum:,.2f} kWh")
-        st.write(f"Value of RHS of Equation (Total_BCQ * 1000 - WESM): {rhs_equation_value:,.2f} kWh")
-        st.write(f"Difference (Daily Total MQ - RHS): {(daily_total_mq_sum - rhs_equation_value):,.2f} kWh")
+        daily_total_mq_sum = daily_sums.get('Total_MQ', 0) # Keep Total_MQ sum for context/debugging
 
 
         # Check if there is any data in the components to build the Sankey chart
+        # Check if any source or destination has non-zero data, or if WESM is non-zero
         any_component_data = False
         for col in list(BCQ_SOURCE_MAP.keys()) + list(MQ_DEST_MAP.keys()):
             if daily_sums.get(col, 0) != 0:
                  any_component_data = True
                  break
-        # Also check if WESM contributes
         if daily_wesm_sum != 0:
              any_component_data = True
 
@@ -379,20 +369,11 @@ with main_content: # Place all the main content inside the central column
             if daily_wesm_sum != 0:
                  node_labels.append('WESM')
 
-            # Add intermediate nodes - only if there's flow into or out of them
-            include_total_bcq_input = daily_total_bcq_sum != 0 or any(daily_sums.get(col, 0) != 0 for col in BCQ_SOURCE_MAP.keys())
-            include_total_wesm_input = daily_wesm_sum != 0
-            scaled_total_bcq = daily_total_bcq_sum * 1000
-            scaled_wesm = daily_wesm_sum * -1
-            combined_input_sum = scaled_total_bcq + scaled_wesm
-            include_combined_input = combined_input_sum != 0 or any(daily_sums.get(col, 0) != 0 for col in MQ_DEST_MAP.keys()) # Also if destinations exist
-
-            if include_total_bcq_input:
-                 node_labels.append('Total BCQ Input')
-            if include_total_wesm_input:
-                 node_labels.append('Total WESM Input')
-            if include_combined_input:
-                 node_labels.append('Combined Input')
+            # Add 'Total BCQ' intermediate node if there's flow into it or out of it
+            # Flow into Total BCQ comes from individual BCQ sources and WESM
+            # Flow out goes to individual MQ destinations
+            if daily_total_bcq_sum != 0 or daily_wesm_sum != 0 or any(daily_sums.get(col, 0) != 0 for col in BCQ_SOURCE_MAP.keys()) or any(daily_sums.get(col, 0) != 0 for col in MQ_DEST_MAP.keys()):
+                 node_labels.append('Total BCQ')
 
 
             # Add MQ destination nodes that have non-zero sums
@@ -414,43 +395,34 @@ with main_content: # Place all the main content inside the central column
             values = []
             link_labels = [] # Optional: labels for links
 
-            # Links from individual BCQ sources to 'Total BCQ Input'
-            if 'Total BCQ Input' in label_to_index: # Only create links if the target node exists
+            # Links from individual BCQ sources to 'Total BCQ'
+            if 'Total BCQ' in label_to_index: # Only create links if the target node exists
                 for col, name in BCQ_SOURCE_MAP.items():
                      value = daily_sums.get(col, 0)
                      if value != 0 and name in label_to_index: # Ensure source node exists and has value
                           sources.append(label_to_index[name])
-                          targets.append(label_to_index['Total BCQ Input'])
+                          targets.append(label_to_index['Total BCQ'])
                           values.append(abs(value)) # Use absolute value for link thickness
-                          link_labels.append(f'{name} to Total BCQ Input: {value:,.2f}')
+                          link_labels.append(f'{name} to Total BCQ: {value:,.2f}')
 
 
-            # Link from 'WESM' to 'Total WESM Input'
-            if daily_wesm_sum != 0 and 'WESM' in label_to_index and 'Total WESM Input' in label_to_index:
+            # Link from 'WESM' to 'Total BCQ'
+            if daily_wesm_sum != 0 and 'WESM' in label_to_index and 'Total BCQ' in label_to_index:
                  sources.append(label_to_index['WESM'])
-                 targets.append(label_to_index['Total WESM Input'])
-                 values.append(abs(daily_wesm_sum)) # Use absolute value
-                 link_labels.append(f'WESM to Total WESM Input: {daily_wesm_sum:,.2f}')
-
-            # Link from 'Total BCQ Input' to 'Combined Input' (scaled)
-            # Check if both source and target nodes exist and the scaled value is non-zero
-            if 'Total BCQ Input' in label_to_index and 'Combined Input' in label_to_index and scaled_total_bcq != 0:
-                 sources.append(label_to_index['Total BCQ Input'])
-                 targets.append(label_to_index['Combined Input'])
-                 values.append(abs(scaled_total_bcq)) # Use absolute value
-                 link_labels.append(f'Total BCQ Input to Combined Input (x1000): {scaled_total_bcq:,.2f}')
+                 targets.append(label_to_index['Total BCQ'])
+                 # Use the WESM sum value directly for the link to Total BCQ
+                 values.append(abs(daily_wesm_sum)) # Use absolute value for thickness
+                 link_labels.append(f'WESM to Total BCQ: {daily_wesm_sum:,.2f}')
 
 
-            # Link from 'Total WESM Input' to 'Combined Input' (scaled)
-            # Check if both source and target nodes exist and the scaled value is non-zero
-            if 'Total WESM Input' in label_to_index and 'Combined Input' in label_to_index and scaled_wesm != 0:
-                 sources.append(label_to_index['Total WESM Input'])
-                 targets.append(label_to_index['Combined Input'])
-                 values.append(abs(scaled_wesm)) # Use absolute value
-                 link_labels.append(f'Total WESM Input to Combined Input (x-1): {scaled_wesm:,.2f}')
+            # Links from 'Total BCQ' to individual MQ destinations (proportional distribution)
+            # The total flow out of 'Total BCQ' should ideally match the sum of flows into it.
+            # Based on your formula Total_MQ = (Total_BCQ * 1000) + (WESM * -1),
+            # the flow out of Total BCQ should be distributed proportionally to MQ destinations.
+            # We will use the sum of flows *into* Total BCQ (sum of individual BCQ + WESM) as the basis for distribution.
+            total_flow_into_total_bcq = sum(daily_sums.get(col, 0) for col in BCQ_SOURCE_MAP.keys()) + daily_wesm_sum
 
-            # Links from 'Combined Input' to individual MQ destinations (proportional distribution)
-            if 'Combined Input' in label_to_index and combined_input_sum != 0: # Check if source node exists and there's flow
+            if 'Total BCQ' in label_to_index and total_flow_into_total_bcq != 0: # Check if source node exists and there's flow
                  # Calculate the sum of daily MQ destination sums for proportional distribution
                  total_mq_dest_sum = sum(daily_sums.get(col, 0) for col in MQ_DEST_MAP.keys())
 
@@ -460,13 +432,13 @@ with main_content: # Place all the main content inside the central column
                            # Only create a link to this destination if it exists as a node and has a non-zero sum
                            if daily_mq_dest_sum != 0 and name in label_to_index:
                                 # Calculate the proportional value flowing to this destination
-                                # Use the actual combined_input_sum (can be positive or negative) for proportional calculation
-                                proportional_value = (daily_mq_dest_sum / total_mq_dest_sum) * combined_input_sum
+                                # Distribute the 'total_flow_into_total_bcq' proportionally to MQ destinations
+                                proportional_value = (daily_mq_dest_sum / total_mq_dest_sum) * total_flow_into_total_bcq
                                 if proportional_value != 0: # Only create link if there's flow
-                                     sources.append(label_to_index['Combined Input'])
+                                     sources.append(label_to_index['Total BCQ'])
                                      targets.append(label_to_index[name])
                                      values.append(abs(proportional_value)) # Use absolute value for thickness
-                                     link_labels.append(f'Combined Input to {name}: {proportional_value:,.2f}')
+                                     link_labels.append(f'Total BCQ to {name}: {proportional_value:,.2f}')
                  # else: This case is handled by the outer 'if not any_component_data:' check
 
             # --- DEBUGGING: Display Link Data ---
@@ -507,3 +479,4 @@ with main_content: # Place all the main content inside the central column
 
     else:
         st.warning(f"No data available for selected date: {selected_date_str}.")
+
