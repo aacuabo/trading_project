@@ -256,7 +256,7 @@ def create_sankey_chart(data: pd.DataFrame, selected_date_str: str):
     wesm_daily_sum = data['WESM'].sum()
     
     # Calculate total generation needed (MQ minus WESM if WESM is negative, or just MQ if WESM is positive)
-    if wesm_daily_sum < 0:
+    if wesm_daily_sum > 0:
         # If WESM is negative (we're exporting), we need to generate more than MQ
         total_generation_needed = total_mq_sum - wesm_daily_sum  # Note: subtracting a negative adds to the total
     else:
