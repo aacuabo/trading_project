@@ -229,7 +229,7 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
     if wesm_value_for_sankey < 0: # WESM Import
         total_flow_through_junction += abs(wesm_value_for_sankey)
     
-    junction_node_label = f"Energy Junction ({total_flow_through_junction:,.0f} kWh)"
+    junction_node_label = f"Demand ({total_flow_through_junction:,.0f} kWh)"
     junction_node_idx = add_node(junction_node_label, "grey")
 
     # --- Links TO Junction Node ---
