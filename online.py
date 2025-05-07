@@ -307,7 +307,7 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
         node=dict(
             pad=20,  
             thickness=15,
-            line=dict(color="black", width=0.5),
+            line=dict(color="#A9A9A9", width=0.5),
             label=sankey_node_labels,
             color=node_colors
         ),
