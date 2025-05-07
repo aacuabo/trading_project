@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from datetime import datetime, date
 import altair as alt
 import numpy as np # Import numpy for handling potential NaN sums
-# import altair_ally # Keep commented for now
+import plotly.graph_objects as go # Import Plotly for Sankey chart
 
 # Set Streamlit page configuration
 st.set_page_config(layout="wide") # Use wide layout for better display
@@ -38,39 +38,22 @@ def get_sqlalchemy_engine():
 
 
 # --- LOAD DATA ---
-# Define the columns for individual MQ units and BCQ generators and their desired display aliases
-MQ_UNIT_COLUMNS = {
-    "14BGN_T1L1_KIDCOTE01_NET": 'M1,M6,M8',
-    "14BGN_T1L1_KIDCOTE02_NET": 'M2',
-    "14BGN_T1L1_KIDCOTE03_NET": 'M3',
-    "14BGN_T1L1_KIDCOTE04_NET": 'M4',
-    "14BGN_T2L1_KIDCOTE05_NET": 'M5',
-    "14BGN_T1L1_KIDCOTE08_NET": 'M7',
-    "14BGN_T1L1_KIDCOTE10_NET": 'M9',
-    "14BGN_T1L1_KIDCSCV01_DEL": 'KIDCSCV01', # Assuming these names are in the DB
-    "14BGN_T1L1_KIDCSCV02_DEL": 'KIDCSCV02', # Assuming these names are in the DB
-}
-
-BCQ_GENERATOR_COLUMNS = {
-    "FDC Misamis Power Corporation  (FDC)": 'FDC',
-    "GNPower Kauswagan Ltd. Co. (GNPKLCO)": 'GNPK',
-    "Power Sector Assets & Liabilities Management Corporation (PSALMGMIN)": 'PSALM',
-    "Sarangani Energy Corporation (SEC)": 'SEC',
-    "Therma South, Inc. (TSI)": 'TSI',
-    "Malita Power Inc. (SMCPC)": 'MPI',
-}
-
 @st.cache_data(ttl=3600) # Cache available dates for an hour
 def fetch_available_dates():
     """Fetches a list of unique dates available in the database."""
     try:
         engine = get_sqlalchemy_engine()
+        # Assuming 'MQ_Hourly' table contains all relevant dates.
+        # Fetch dates as DATE type if possible or cast, then convert to datetime.date
         query = """
             SELECT DISTINCT CAST("Date" AS DATE) AS "Date"
             FROM "MQ_Hourly"
             ORDER BY "Date";
         """
+        # Use parse_dates to ensure the "Date" column is read as datetime
+        # Ensure the column name here matches the one in the query (CAST AS "Date")
         dates_df = pd.read_sql(query, engine, parse_dates=["Date"])
+        # Convert datetime objects to date objects
         available_dates = dates_df["Date"].dt.date.tolist()
         return available_dates
     except Exception as e:
@@ -80,39 +63,55 @@ def fetch_available_dates():
 
 @st.cache_data(ttl=600) # Cache hourly data for 10 minutes
 def fetch_data(selected_date_str: str): # Added type hint for caching key
-    """Fetches hourly MQ, BCQ, Prices, and individual generator/unit data for a selected date."""
+    """
+    Fetches hourly MQ, BCQ, Prices, and individual component data for a selected date.
+    Includes error handling for potentially missing individual component columns.
+    """
     try:
         engine = get_sqlalchemy_engine()
 
-        # Construct the list of columns to select
-        cols_to_select = [
-            'mq."Date"', 'mq."Time"', 'mq."Total_MQ"', 'bcq."Total_BCQ"', 'p."Prices"'
+        # Define the columns we want to fetch, including individual components
+        mq_cols = [
+            '"Total_MQ"',
+            '"14BGN_T1L1_KIDCOTE01_NET"',
+            '"14BGN_T1L1_KIDCOTE02_NET"',
+            '"14BGN_T1L1_KIDCOTE03_NET"',
+            '"14BGN_T1L1_KIDCOTE04_NET"',
+            '"14BGN_T2L1_KIDCOTE05_NET"',
+            '"14BGN_T1L1_KIDCOTE08_NET"',
+            '"14BGN_T1L1_KIDCOTE10_NET"',
+            '"14BGN_T1L1_KIDCSCV01_DEL"',
+            '"14BGN_T1L1_KIDCSCV02_DEL"',
         ]
-        # Add individual MQ unit columns
-        for col_name in MQ_UNIT_COLUMNS.keys():
-             # Add quotes around column names just in case
-             cols_to_select.append(f'mq."{col_name}"')
+        bcq_cols = [
+            '"Total_BCQ"',
+            '"FDC"', # Assuming column name is "FDC"
+            '"GNPK"', # Assuming column name is "GNPK"
+            '"PSALM"', # Assuming column name is "PSALM"
+            '"SEC"', # Assuming column name is "SEC"
+            '"TSI"', # Assuming column name is "TSI"
+            '"MPI"', # Assuming column name is "MPI"
+        ]
+        price_cols = ['"Prices"']
 
-        # Add individual BCQ generator columns, using aliases in the query
-        bcq_select_aliases = []
-        for col_name, alias in BCQ_GENERATOR_COLUMNS.items():
-             # Quote original column name and alias it
-             cols_to_select.append(f'bcq."{col_name}" AS "{alias}"')
-             bcq_select_aliases.append(alias)
-
-
+        # Construct the SELECT part of the query dynamically
+        select_cols = [f'mq.{col}' for col in mq_cols] + [f'bcq.{col}' for col in bcq_cols] + [f'p.{col}' for col in price_cols]
         query = f"""
-            SELECT {', '.join(cols_to_select)}
+            SELECT
+                mq."Date",
+                mq."Time",
+                {', '.join(select_cols)}
             FROM "MQ_Hourly" AS mq
             JOIN "BCQ_Hourly" AS bcq ON mq."Date" = bcq."Date" AND mq."Time" = bcq."Time"
             JOIN "Prices_Hourly" AS p ON mq."Date" = p."Date" AND mq."Time" = p."Time"
             WHERE mq."Date" = %s
-            ORDER BY
-                mq."Time"
+            ORDER BY mq."Time";
         """
+
+        # Use parse_dates for known datetime columns
         df = pd.read_sql(query, engine, params=[(selected_date_str,)], parse_dates=["Date", "Time"])
 
-        # Ensure Time is treated as a datetime object
+        # Ensure Time is treated as a datetime object by combining with Date if necessary
         if not df.empty and 'Date' in df.columns and 'Time' in df.columns:
              try:
                  if not pd.api.types.is_datetime64_any_dtype(df['Time']):
@@ -122,31 +121,30 @@ def fetch_data(selected_date_str: str): # Added type hint for caching key
                      df.dropna(subset=['Datetime'], inplace=True)
                      df['Time'] = df['Datetime']
 
-                 if 'Date' in df.columns:
-                     df = df.drop(columns=['Date'])
+                 # Drop the original 'Date' column if 'Datetime' was created
+                 if 'Datetime' in df.columns:
+                     df.drop(columns=['Date', 'Datetime'], errors='ignore', inplace=True)
+                 elif 'Date' in df.columns:
+                      df.drop(columns=['Date'], errors='ignore', inplace=True)
+
 
              except Exception as e:
-                 st.error(f"Error converting 'Time' column to datetime after fetch: {e}.")
+                 st.error(f"Error converting 'Time' column to datetime after fetch: {e}. Please check the format of the 'Date' and 'Time' columns in your database.")
                  return pd.DataFrame()
 
+        # Ensure all fetched columns are numeric where expected, coercing errors to NaN
+        all_numeric_cols = [col.strip('"') for col in mq_cols + bcq_cols + price_cols]
+        for col in all_numeric_cols:
+             if col in df.columns:
+                  df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        # Ensure all relevant columns are numeric after fetching/parsing
-        all_value_cols = ["Total_MQ", "Total_BCQ", "Prices"] + list(MQ_UNIT_COLUMNS.keys()) + list(BCQ_GENERATOR_COLUMNS.values()) # Use values() for aliases here
-        for col in all_value_cols:
-            if col in df.columns:
-                 df[col] = pd.to_numeric(df[col], errors='coerce')
-
-        # Drop rows where essential columns like Time or Total_MQ/BCQ are missing after conversion
-        essential_cols = ['Time', 'Total_MQ', 'Total_BCQ']
-        if all(col in df.columns for col in essential_cols):
-             df.dropna(subset=essential_cols, inplace=True)
-
+        # Drop rows where the 'Time' column is missing after conversion
+        if 'Time' in df.columns:
+             df.dropna(subset=['Time'], inplace=True)
 
         return df
     except Exception as e:
-        st.error(f"Error fetching data, including individual generator data: {e}")
-        if "column" in str(e) and "does not exist" in str(e):
-             st.error("Database column not found. Ensure columns for individual MQ units and BCQ generators exist and names match in your database tables.")
+        st.error(f"Error fetching data: {e}")
         return pd.DataFrame()
 
 
@@ -184,7 +182,6 @@ with main_content: # Place all the main content inside the central column
     # Fetch the hourly data for the selected date
     data = fetch_data(selected_date_str)
 
-
     if not data.empty:
         # --- Display Daily Summary Metrics as Cards ---
         st.subheader("Daily Summary Metrics")
@@ -205,9 +202,8 @@ with main_content: # Place all the main content inside the central column
             else:
                  col2.info("Average Price is not available.")
         else:
-            col1.warning("Prices data not available or not numeric.")
-            col2.warning("Avg Price data not available or not numeric.")
-
+            col1.warning("Prices data not available or not numeric for metrics.")
+            col2.warning("Avg Price data not available or not numeric for metrics.")
 
         # --- Display Maximum Total MQ and corresponding time ---
         if "Total_MQ" in data.columns and "Time" in data.columns and not data["Total_MQ"].empty and pd.api.types.is_numeric_dtype(data["Total_MQ"]) and pd.api.types.is_datetime64_any_dtype(data["Time"]):
@@ -216,16 +212,12 @@ with main_content: # Place all the main content inside the central column
                  max_mq_row_index = data["Total_MQ"].idxmax()
                  max_mq_time = data.loc[max_mq_row_index, "Time"]
                  max_mq_time_str = max_mq_time.strftime("%H:%M")
-
                  col3.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq_value:,.2f}")
                  col3.write(f"at {max_mq_time_str}")
-
             else:
                  col3.info("Total_MQ data contains no valid numbers for maximum metric.")
-
         else:
              col3.warning("Max MQ or Time data not available, not numeric, empty, or Time is not datetime.")
-
 
         # --- Add WESM column (Total_BCQ - Total_MQ) ---
         if all(col in data.columns for col in ["Total_BCQ", "Total_MQ"]):
@@ -241,7 +233,7 @@ with main_content: # Place all the main content inside the central column
         st.dataframe(data) # Display fetched data including the new WESM column
 
 
-        # --- HOURLY LINE/BAR CHART ---
+        # --- PLOT DATA USING ALTAIR FOR INTERACTIVITY ---
         st.subheader("📈 Energy Metrics Over Time (Interactive)")
 
         if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
@@ -263,14 +255,14 @@ with main_content: # Place all the main content inside the central column
                     color=alt.Color(
                         "Metric",
                         legend=alt.Legend(title="Metric", orient='bottom'),
-                        scale=alt.Scale(domain=['Total_MQ', 'Total_BCQ'], range=['#FFC20A', '#1A85FF'])
+                        scale=alt.Scale(domain=['Total_MQ', 'Total_BCQ'], range=['#FFC20A', '#1A85FF']) # Yellow, Blue
                     ),
                     tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", alt.Tooltip("Value", format=".2f")]
                 ).properties(
                 )
 
                 chart_price_data = melted_data[melted_data["Metric"] == "Prices"].dropna(subset=['Value'])
-                chart_price = alt.Chart(chart_price_data).mark_bar(color="#40B0A6").encode(
+                chart_price = alt.Chart(chart_price_data).mark_bar(color="#40B0A6").encode( # Apple green
                     x=alt.X("Time", axis=alt.Axis(title="")),
                     y=alt.Y("Value", title="Price (PHP/kWh)", axis=alt.Axis(titleColor="tab:red"), scale=alt.Scale(zero=True)),
                     tooltip=[alt.Tooltip("Time", format="%Y-%m-%d %H:%M"), "Metric", alt.Tooltip("Value", format=".2f")]
@@ -286,165 +278,166 @@ with main_content: # Place all the main content inside the central column
                 st.altair_chart(combined_chart, use_container_width=True)
             else:
                 missing_or_non_numeric_cols = [col for col in columns_to_melt if col not in data.columns or (col in data.columns and not pd.api.types.is_numeric_dtype(data[col]))]
-                st.warning(f"Data fetched but required columns for line/bar plotting are missing or not numeric: {missing_or_non_numeric_cols}.")
+                st.warning(f"Data fetched but required columns for line/bar plotting are missing or not numeric: {missing_or_non_numeric_cols}. Check your database tables.")
 
         else:
             st.warning("Time column is not in the expected datetime format for plotting or data is empty after fetch.")
 
 
-        # --- SANKEY CHART: Flow from BCQ Generators to MQ Units ---
-        st.subheader("📊 Daily Energy Flow (Conceptual Sankey Chart)")
+        # --- SANKEY CHART: Energy Flow ---
+        st.subheader("🔗 Daily Energy Flow (Sankey Diagram)")
 
-        st.info("This Sankey chart visualizes a conceptual flow from individual BCQ Generators (Sources) to individual MQ Units (Destinations). The total volume flowing into the destinations (MQ Units) is their daily total (Daily_Total_MQ). The flow from each source BCQ Generator is distributed proportionally to each destination MQ Unit.")
+        # Define mappings for component names
+        bcq_source_map = {
+            'FDC': 'FDC',
+            'GNPK': 'GNPK',
+            'PSALM': 'PSALM',
+            'SEC': 'SEC',
+            'TSI': 'TSI',
+            'MPI': 'MPI'
+        }
+        mq_dest_map = {
+            '14BGN_T1L1_KIDCOTE01_NET': 'M1/M6/M8',
+            '14BGN_T1L1_KIDCOTE02_NET': 'M2',
+            '14BGN_T1L1_KIDCOTE03_NET': 'M3',
+            '14BGN_T1L1_KIDCOTE04_NET': 'M4',
+            '14BGN_T2L1_KIDCOTE05_NET': 'M5',
+            '14BGN_T1L1_KIDCOTE08_NET': 'M7',
+            '14BGN_T1L1_KIDCOTE10_NET': 'M9',
+            '14BGN_T1L1_KIDCSCV01_DEL': 'KIDCSCV01_DEL',
+            '14BGN_T1L1_KIDCSCV02_DEL': 'KIDCSCV02_DEL'
+        }
 
-        # Calculate daily totals for all components
-        daily_totals = data.sum(numeric_only=True)
+        # Calculate daily sums for individual components and totals
+        daily_sums = {}
+        all_component_cols = list(bcq_source_map.keys()) + list(mq_dest_map.keys()) + ['Total_BCQ', 'Total_MQ', 'WESM']
 
-        # Ensure Total_MQ, Total_BCQ, and WESM totals are available
-        daily_mq_total_sum = daily_totals.get("Total_MQ", 0)
-        daily_bcq_total_sum = daily_totals.get("Total_BCQ", 0)
-        daily_wesm_total_sum = daily_totals.get("WESM", 0) # WESM is already BCQ - MQ
-
-        # Calculate the value of the RHS of the user's equation for context
-        rhs_equation_value = (daily_bcq_total_sum * 1000) - daily_wesm_total_sum
-
-        st.write(f"Daily Total MQ (Destination Sum): {daily_mq_total_sum:,.2f} kWh")
-        st.write(f"Daily Total BCQ (Source Sum): {daily_bcq_total_sum:,.2f} kWh")
-        st.write(f"Daily Total WESM: {daily_wesm_total_sum:,.2f} kWh")
-        st.write(f"Value of RHS of Equation (Total_BCQ * 1000 - WESM): {rhs_equation_value:,.2f} kWh")
-        st.write(f"Difference (Daily Total MQ - RHS): {(daily_mq_total_sum - rhs_equation_value):,.2f} kWh")
-
-
-        links_data = []
-        mq_available_totals = {}
-        bcq_available_totals = {}
-
-        # Get daily totals for available MQ unit columns (destinations)
-        # Use original column names from fetch_data as keys, map to aliases for display
-        for col_name, alias in MQ_UNIT_COLUMNS.items():
-             if col_name in daily_totals:
-                 mq_available_totals[alias] = daily_totals[col_name]
-
-        # Get daily totals for available BCQ generator columns (sources)
-        # Use aliases from fetch_data query as keys
-        for col_name, alias in BCQ_GENERATOR_COLUMNS.items():
-             if alias in daily_totals:
-                 bcq_available_totals[alias] = daily_totals[alias]
-
-
-        total_available_mq_units_sum = sum(mq_available_totals.values())
-        total_available_bcq_gens_sum = sum(bcq_available_totals.values())
-
-
-        # Create links data for the Sankey chart
-        # Flow from BCQ Sources to MQ Destinations
-        # Only create links if there are positive totals in both source and target components
-        if total_available_bcq_gens_sum > 0 and total_available_mq_units_sum > 0:
-            # Avoid division by zero in proportionality calculation
-            for bcq_alias, bcq_total in bcq_available_totals.items():
-                for mq_alias, mq_total in mq_available_totals.items():
-                     # Calculate flow value based on proportionality
-                     # Flow(bcq_gen_j -> mq_unit_i) = Daily_Total_mq_unit_i * (Daily_Total_bcq_gen_j / Total_Available_BCQ_Gens_Sum)
-                     # This ensures that the sum of flows TO each mq_unit_i is its total,
-                     # and the sum of flows FROM each bcq_gen_j is proportional to its share of the total BCQ.
-                     if total_available_bcq_gens_sum > 0: # Re-check to be safe
-                        flow_value = mq_total * (bcq_total / total_available_bcq_gens_sum)
-                     else:
-                        flow_value = 0 # Should not happen if outer if passes
-
-                     if flow_value > 0: # Only add links with positive flow
-                        links_data.append({'source': bcq_alias, 'target': mq_alias, 'value': flow_value})
-
-            links_df = pd.DataFrame(links_data)
-
-            if not links_df.empty:
-                # --- Altair Sankey Chart Implementation ---
-                # Similar approach to Alluvial, using mark_trail for bands and mark_text for labels.
-
-                # Prepare data for bands
-                melted_links_source = links_df.copy()
-                melted_links_source['stage'] = 0 # Source stage (BCQ)
-                melted_links_source['node'] = melted_links_source['source']
-                melted_links_source['band_group'] = melted_links_source['source'] + '->' + melted_links_source['target']
-
-                melted_links_target = links_df.copy()
-                melted_links_target['stage'] = 1 # Target stage (MQ)
-                melted_links_target['node'] = melted_links_target['target']
-                melted_links_target['band_group'] = melted_links_target['source'] + '->' + melted_links_target['target']
-
-                # Combine source and target points for each band
-                sankey_data = pd.concat([melted_links_source, melted_links_target])
-
-                # Sort data for correct stacking and band drawing
-                # Sort by stage first, then by source, then by target for consistent banding
-                sankey_data = sankey_data.sort_values(by=['stage', 'source', 'target']).reset_index(drop=True)
-
-                # Sankey bands (using mark_trail)
-                bands = alt.Chart(sankey_data).mark_trail().encode(
-                    x=alt.X('stage', axis=None), # X-axis represents the stage (Source/Target)
-                    # Y-axis represents the stacked value. Need to stack 'value' within each stage.
-                    y=alt.Y('value', stack='zero', axis=None), # Stack values at each stage
-                    detail='band_group', # Group paths by the band
-                    # Color the bands by the source node (BCQ Generator)
-                    color=alt.Color('source', title='BCQ Generator Source'),
-                    opacity=alt.Opacity('value', legend=None), # Opacity based on flow value
-                    tooltip=[
-                        alt.Tooltip('source', title='Source BCQ'),
-                        alt.Tooltip('target', title='Destination MQ'),
-                        alt.Tooltip('value', title='Flow (kWh)', format=".2f")
-                    ]
-                )
-
-                # Create node labels
-                # Need to get the total value per node at each stage
-                # Use the mq_available_totals and bcq_available_totals for node totals directly
-                node_totals_list = []
-                for alias, total in bcq_available_totals.items():
-                    node_totals_list.append({'node': alias, 'stage': 0, 'value': total, 'stage_name': 'Sources'})
-                for alias, total in mq_available_totals.items():
-                    node_totals_list.append({'node': alias, 'stage': 1, 'value': total, 'stage_name': 'Destinations'})
-                node_totals_df = pd.DataFrame(node_totals_list)
-
-
-                # Calculate cumulative stack position for labels
-                node_totals_df['cumulative_stack'] = node_totals_df.groupby('stage')['value'].cumsum() - (node_totals_df['value'] / 2) # Center position
-
-
-                # Create node labels layer
-                node_label_layer = alt.Chart(node_totals_df).mark_text(
-                    align='left', # Alignment will be adjusted below
-                    baseline='middle',
-                    dx=5 # Small offset
-                ).encode(
-                     x=alt.X('stage', axis=None),
-                     y=alt.Y('cumulative_stack', axis=None), # Use calculated center position
-                     text='node',
-                     color=alt.value('black'),
-                     # Tooltip for the node total itself
-                     tooltip=['node', alt.Tooltip('value', title='Daily Total (kWh)', format=".2f")]
-                )
-
-                # Adjust text label alignment based on stage
-                node_label_layer = node_label_layer.encode(
-                    align=alt.condition(alt.datum.stage == 0, alt.value('right'), alt.value('left')),
-                    dx=alt.condition(alt.datum.stage == 0, alt.value(-5), alt.value(5)) # Offset left for source, right for target
-                )
-
-
-                # Combine bands and node labels
-                final_sankey_chart = alt.layer(bands, node_label_layer).properties(
-                     title=f"Daily Energy Flow from BCQ Generators to MQ Units for {selected_date_str} (Conceptual)"
-                ).interactive()
-
-
-                st.altair_chart(final_sankey_chart, use_container_width=True)
-
+        for col in all_component_cols:
+            # Check if column exists and is numeric before summing
+            if col in data.columns and pd.api.types.is_numeric_dtype(data[col]):
+                 daily_sums[col] = data[col].sum()
             else:
-                 st.info("Insufficient positive flow calculated between components to generate the Sankey chart links.")
+                 daily_sums[col] = 0 # Default to 0 if column is missing or not numeric
 
+        daily_total_bcq_sum = daily_sums.get('Total_BCQ', 0)
+        daily_total_mq_sum = daily_sums.get('Total_MQ', 0)
+        daily_wesm_sum = daily_sums.get('WESM', 0)
+
+        # Check if there is any data to display in the Sankey chart
+        if daily_total_bcq_sum == 0 and daily_total_mq_sum == 0 and daily_wesm_sum == 0:
+             st.info(f"No data available to build the Sankey diagram for {selected_date_str}.")
         else:
-             st.info("Insufficient data (zero totals in source or target components) to generate the Sankey chart.")
+
+            # Define nodes for the Sankey diagram
+            # Include individual BCQ sources, WESM, intermediate nodes, and individual MQ destinations
+            node_labels = []
+            # Add BCQ source nodes
+            bcq_source_nodes = [name for col, name in bcq_source_map.items() if daily_sums.get(col, 0) != 0]
+            node_labels.extend(bcq_source_nodes)
+
+            # Add WESM node if WESM sum is not zero
+            if daily_wesm_sum != 0:
+                 node_labels.append('WESM')
+
+            # Add intermediate nodes
+            node_labels.extend(['Total BCQ Input', 'Total WESM Input', 'Combined Input'])
+
+            # Add MQ destination nodes
+            mq_dest_nodes = [name for col, name in mq_dest_map.items() if daily_sums.get(col, 0) != 0]
+            node_labels.extend(mq_dest_nodes)
+
+            # Create a mapping from node label to index
+            label_to_index = {label: i for i, label in enumerate(node_labels)}
+
+            # Define links for the Sankey diagram
+            sources = []
+            targets = []
+            values = []
+            link_labels = [] # Optional: labels for links
+
+            # Links from individual BCQ sources to 'Total BCQ Input'
+            for col, name in bcq_source_map.items():
+                 value = daily_sums.get(col, 0)
+                 if value != 0 and name in label_to_index and 'Total BCQ Input' in label_to_index:
+                      sources.append(label_to_index[name])
+                      targets.append(label_to_index['Total BCQ Input'])
+                      values.append(abs(value)) # Use absolute value for link thickness
+                      link_labels.append(f'{name} to Total BCQ Input: {value:,.2f}')
+
+
+            # Link from 'WESM' to 'Total WESM Input'
+            if daily_wesm_sum != 0 and 'WESM' in label_to_index and 'Total WESM Input' in label_to_index:
+                 sources.append(label_to_index['WESM'])
+                 targets.append(label_to_index['Total WESM Input'])
+                 values.append(abs(daily_wesm_sum)) # Use absolute value
+                 link_labels.append(f'WESM to Total WESM Input: {daily_wesm_sum:,.2f}')
+
+            # Link from 'Total BCQ Input' to 'Combined Input' (scaled)
+            scaled_total_bcq = daily_total_bcq_sum * 1000
+            if scaled_total_bcq != 0 and 'Total BCQ Input' in label_to_index and 'Combined Input' in label_to_index:
+                 sources.append(label_to_index['Total BCQ Input'])
+                 targets.append(label_to_index['Combined Input'])
+                 values.append(abs(scaled_total_bcq)) # Use absolute value
+                 link_labels.append(f'Total BCQ Input to Combined Input (x1000): {scaled_total_bcq:,.2f}')
+
+
+            # Link from 'Total WESM Input' to 'Combined Input' (scaled)
+            scaled_wesm = daily_wesm_sum * -1
+            if scaled_wesm != 0 and 'Total WESM Input' in label_to_index and 'Combined Input' in label_to_index:
+                 sources.append(label_to_index['Total WESM Input'])
+                 targets.append(label_to_index['Combined Input'])
+                 values.append(abs(scaled_wesm)) # Use absolute value
+                 link_labels.append(f'Total WESM Input to Combined Input (x-1): {scaled_wesm:,.2f}')
+
+            # Links from 'Combined Input' to individual MQ destinations (proportional distribution)
+            combined_input_sum = scaled_total_bcq + scaled_wesm
+            if combined_input_sum != 0 and 'Combined Input' in label_to_index:
+                 # Calculate the sum of daily MQ destination sums for proportional distribution
+                 total_mq_dest_sum = sum(daily_sums.get(col, 0) for col in mq_dest_map.keys())
+
+                 if total_mq_dest_sum != 0:
+                      for col, name in mq_dest_map.items():
+                           daily_mq_dest_sum = daily_sums.get(col, 0)
+                           if daily_mq_dest_sum != 0 and name in label_to_index:
+                                # Calculate the proportional value flowing to this destination
+                                proportional_value = (daily_mq_dest_sum / total_mq_dest_sum) * combined_input_sum
+                                if proportional_value != 0:
+                                     sources.append(label_to_index['Combined Input'])
+                                     targets.append(label_to_index[name])
+                                     values.append(abs(proportional_value)) # Use absolute value
+                                     link_labels.append(f'Combined Input to {name}: {proportional_value:,.2f}')
+                 else:
+                      st.warning("Sum of individual MQ destination data is zero, cannot proportionally distribute Combined Input.")
+            elif 'Combined Input' in label_to_index:
+                 st.info("Combined Input sum is zero, no flow to MQ destinations.")
+
+
+            # Create the Sankey diagram using Plotly
+            fig = go.Figure(data=[go.Sankey(
+                node=dict(
+                    pad=15,
+                    thickness=20,
+                    line=dict(color="black", width=0.5),
+                    label=node_labels,
+                    # color="blue" # Optional: set node color
+                ),
+                link=dict(
+                    source=sources,
+                    target=targets,
+                    value=values,
+                    label=link_labels, # Display values on hover
+                    # color="rgba(0,0,255,0.1)" # Optional: set link color
+            ))])
+
+            fig.update_layout(
+                title_text=f"Daily Energy Flow for {selected_date_str}",
+                font_size=10,
+                height=600 # Adjust height as needed
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
 
 
     else:
         st.warning(f"No data available for selected date: {selected_date_str}.")
+
