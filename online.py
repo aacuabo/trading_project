@@ -228,7 +228,7 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
     COLOR_PALETTE = {
         "junction": "#f0e442",         # Gray
         "generator": "#0072B2",        # Blue
-        "wesm_import": "#D55E00",      # Vermilion (darker orange)
+        "wesm_import": "#009e73",      # Vermilion (darker orange)
         "load": "#d55e00",             # Green
         "wesm_export": "#CC79A7"       # Reddish purple
     }
