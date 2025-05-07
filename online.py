@@ -5,33 +5,19 @@ from datetime import datetime, date
 # import matplotlib.pyplot as plt # Not needed with Altair plot
 # import matplotlib.ticker as ticker # Not needed with Altair plot
 import altair as alt
-import streamlit_authenticator as stauth # Import the authenticator library
-# import yaml # Not needed if loading config directly from secrets
-# from yaml.loader import SafeLoader # Not needed if loading config directly from secrets
+# Removed: import streamlit_authenticator as stauth # Removed the authenticator library
+# Removed: import yaml # Not needed
+# Removed: from yaml.loader import SafeLoader # Not needed
 
 # Set Streamlit page configuration
 st.set_page_config(layout="wide") # Use wide layout for better display
 
-# --- User Authentication ---
-# Load authentication configuration from secrets.toml
-# Ensure the structure in secrets.toml matches the expected structure for stauth
-# [auth]
-# credentials = {usernames = {your_username = {name="Your Name", password="hashed_password"}}}
-# cookie = {name="your_cookie_name", key="your_cookie_key", expiry_days=30}
-try:
-    credentials = st.secrets['auth']['credentials']
-    cookie = st.secrets['auth']['cookie']
-except KeyError as e:
-    st.error(f"Authentication secrets not found: {e}. Please ensure your .streamlit/secrets.toml has [auth] section with credentials and cookie information.")
-    st.stop() # Stop the app if auth secrets is missing
+# Removed: --- User Authentication ---
+# Removed: Loading of authentication credentials and cookie from secrets
+# Removed: Initialize the authenticator
+# Removed: Add the login widget at the top of the main area
+# Removed: Display content based on authentication status blocks (if/elif)
 
-# Initialize the authenticator
-authenticator = stauth.Authenticate(
-    credentials,
-    cookie['name'],
-    cookie['key'],
-    cookie['expiry_days']
-)
 
 # --- DATABASE CONFIGURATION ---
 @st.cache_resource # Cache the database engine creation
@@ -157,241 +143,223 @@ def fetch_bcq_entity_sums(selected_date_str: str): # Added type hint for caching
          return pd.DataFrame()
 
 
-# --- Main App Logic (conditionally displayed based on authentication) ---
+# --- STREAMLIT UI (Now always displayed) ---
 
-# Add the login widget at the top of the main area
-name, authentication_status, username = authenticator.login('Login', 'main')
+st.title("📊 Daily Energy Trading Dashboard") # Main title
 
-# --- Display content based on authentication status ---
-if authentication_status == False:
-    st.error('Username/password is incorrect')
-elif authentication_status == None:
-    st.warning('Please enter your username and password')
-elif authentication_status:
-    # --- User is authenticated, display the main app content ---
+# Create outer columns for centering the main content
+# Use a ratio like [1, 4, 1] to make the central content column roughly 4/6 (2/3) of the page width
+spacer_left, main_content, spacer_right = st.columns([1, 4, 1])
 
-    # Add a logout button, typically placed in the sidebar for easy access
-    authenticator.logout('Logout', 'sidebar')
+with main_content: # Place all the main content inside the central column
+    # Fetch available dates and configure date input
+    available_dates = fetch_available_dates()
 
-    st.write(f'Welcome *{name}*')
+    if not available_dates:
+        st.error("No available dates found in the database. Please check data availability and database connection.")
+        st.stop() # Stop the app if no dates are available
 
-    # --- Start of your main app content ---
+    # Set min, max, and default value for the date input based on available dates
+    min_available_date = min(available_dates) if available_dates else date.today()
+    max_available_date = max(available_dates) if available_dates else date.today()
+    # Set default date to the latest available date or today if within range
+    default_date = max_available_date if max_available_date > date.today() else date.today()
+    default_date = max_available_date if default_date < min_available_date else default_date
 
-    st.title("📊 Daily Energy Trading Dashboard") # Moved title inside authenticated block
+    # If no dates are available, default date might still be off.
+    # If available_dates is empty, min/max will be today, default will be today.
+    # The fetch_data will then return empty, handled below.
 
-    # Create outer columns for centering the main content
-    # Use a ratio like [1, 4, 1] to make the central content column roughly 4/6 (2/3) of the page width
-    spacer_left, main_content, spacer_right = st.columns([1, 4, 1])
+    # Ensure the default date is actually one of the available dates if possible
+    if available_dates and default_date not in available_dates:
+         # Find the closest available date, or just default to the latest
+         default_date = max_available_date
 
-    with main_content: # Place all the main content inside the central column
-        # Fetch available dates and configure date input
-        available_dates = fetch_available_dates()
 
-        if not available_dates:
-            st.error("No available dates found in the database. Please check data availability and database connection.")
-            st.stop() # Stop the app if no dates are available
+    selected_date = st.date_input(
+        "Select date",
+        value=default_date,
+        min_value=min_available_date,
+        max_value=max_available_date,
+        # We don't restrict to *only* available dates in the picker itself,
+        # just the min/max range.
+    )
 
-        # Set min, max, and default value for the date input based on available dates
-        min_available_date = min(available_dates) if available_dates else date.today()
-        max_available_date = max(available_dates) if available_dates else date.today()
-        # Set default date to the latest available date or today if within range
-        default_date = max_available_date # Start with the latest available date
+    # Optional: Re-check if the selected date is in the list of available dates
+    # if available_dates and selected_date not in available_dates:
+    #     st.warning(f"Data may not be available for the exact date selected: {selected_date}. Displaying data for the closest available date or period.")
+        # You might want to change selected_date here to an available date before fetching
 
-        # Adjust default date logic to handle cases where today is outside available range
-        if available_dates:
-            if date.today() > max_available_date:
-                 default_date = max_available_date
-            elif date.today() < min_available_date:
-                 default_date = min_available_date
-            else:
-                default_date = date.today() # Default to today if within range
 
-            # Ensure the default date is actually one of the available dates if possible
-            if default_date not in available_dates:
-                # Fallback to the latest available date if the calculated default is not in the list
-                default_date = max_available_date
+    # Format the selected date to 'YYYY-MM-DD' string for the SQL query
+    selected_date_str = selected_date.strftime('%Y-%m-%d')
+
+    # --- FETCH AND DISPLAY DATA ---
+    # Fetch the hourly data for the selected date
+    data = fetch_data(selected_date_str)
+
+    # Fetch the entity specific BCQ sums
+    entity_sums_df = fetch_bcq_entity_sums(selected_date_str)
+
+    if not data.empty:
+        # --- Display Daily Summary Metrics as Cards ---
+        st.subheader("Daily Summary Metrics")
+
+        # Create three columns for the metrics using the default layout
+        col1, col2, col3 = st.columns(3)
+
+        # Display Maximum Price and Average Price in the first two data columns (col1 and col2)
+        # Added checks for numeric type before calculating max/mean
+        if "Prices" in data.columns and not data["Prices"].empty and pd.api.types.is_numeric_dtype(data["Prices"]):
+            max_price = data["Prices"].max()
+            avg_price = data["Prices"].mean()
+            col1.metric(label="Maximum Price (PHP/kWh)", value=f"{max_price:,.2f}") # Format for readability
+            col2.metric(label="Average Price (PHP/kWh)", value=f"{avg_price:,.2f}") # Format for readability
         else:
-             # If no available dates, set default to today (will result in no data fetched)
-             default_date = date.today()
+            col1.warning("Prices data not available or not numeric.")
+            col2.warning("Avg Price data not available or not numeric.")
 
 
-        selected_date = st.date_input(
-            "Select date",
-            value=default_date,
-            min_value=min_available_date,
-            max_value=max_available_date,
-            # We don't restrict to *only* available dates in the picker itself,
-            # just the min/max range.
-        )
+        # --- Display Maximum Total MQ and corresponding time in the third data column (col3) ---
+        # Added checks for numeric type before calculation
+        if "Total_MQ" in data.columns and "Time" in data.columns and not data["Total_MQ"].empty and pd.api.types.is_numeric_dtype(data["Total_MQ"]):
+            # Find the row with the maximum Total_MQ value
+            max_mq_value = data["Total_MQ"].max()
+            # Check if the column is all NaNs or empty, idxmax would raise an error
+            if pd.notnull(max_mq_value) and not data["Total_MQ"].isnull().all(): # Also check if all values are null
+                 # Ensure 'Total_MQ' is numeric before idxmax - already checked above, but safe here
+                 # if pd.api.types.is_numeric_dtype(data["Total_MQ"]):
+                 max_mq_row_index = data["Total_MQ"].idxmax()
+                 # Get the corresponding Time value from that row
+                 max_mq_time = data.loc[max_mq_row_index, "Time"]
 
-        # Optional: Re-check if the selected date is in the list of available dates
-        # if available_dates and selected_date not in available_dates:
-        #     st.warning(f"Data may not be available for the exact date selected: {selected_date}. Displaying data for the closest available date or period.")
-            # You might want to change selected_date here to an available date before fetching
-
-
-        # Format the selected date to 'YYYY-MM-DD' string for the SQL query
-        selected_date_str = selected_date.strftime('%Y-%m-%d')
-
-        # --- FETCH AND DISPLAY DATA ---
-        # Fetch the hourly data for the selected date
-        data = fetch_data(selected_date_str)
-
-        # Fetch the entity specific BCQ sums
-        entity_sums_df = fetch_bcq_entity_sums(selected_date_str)
-
-        if not data.empty:
-            # --- Display Daily Summary Metrics as Cards ---
-            st.subheader("Daily Summary Metrics")
-
-            # Create three columns for the metrics using the default layout
-            col1, col2, col3 = st.columns(3)
-
-            # Display Maximum Price and Average Price in the first two data columns (col1 and col2)
-            # Added checks for numeric type before calculating max/mean
-            if "Prices" in data.columns and not data["Prices"].empty and pd.api.types.is_numeric_dtype(data["Prices"]):
-                max_price = data["Prices"].max()
-                avg_price = data["Prices"].mean()
-                col1.metric(label="Maximum Price (PHP/kWh)", value=f"{max_price:,.2f}") # Format for readability
-                col2.metric(label="Average Price (PHP/kWh)", value=f"{avg_price:,.2f}") # Format for readability
-            else:
-                col1.warning("Prices data not available or not numeric.")
-                col2.warning("Avg Price data not available or not numeric.")
-
-
-            # --- Display Maximum Total MQ and corresponding time in the third data column (col3) ---
-            # Added checks for numeric type before calculation
-            if "Total_MQ" in data.columns and "Time" in data.columns and not data["Total_MQ"].empty and pd.api.types.is_numeric_dtype(data["Total_MQ"]):
-                # Find the row with the maximum Total_MQ value
-                max_mq_value = data["Total_MQ"].max()
-                # Check if the column is all NaNs or empty, idxmax would raise an error
-                if pd.notnull(max_mq_value) and not data["Total_MQ"].isnull().all(): # Also check if all values are null
-                     # Ensure 'Total_MQ' is numeric before idxmax - already checked above, but safe here
-                     # if pd.api.types.is_numeric_dtype(data["Total_MQ"]):
-                     max_mq_row_index = data["Total_MQ"].idxmax()
-                     # Get the corresponding Time value from that row
-                     max_mq_time = data.loc[max_mq_row_index, "Time"]
-
-                     # Format the time for display
-                     if pd.api.types.is_datetime64_any_dtype(max_mq_time):
-                          max_mq_time_str = max_mq_time.strftime("%H:%M")
-                     else:
-                          # Handle cases where max_mq_time might not be a datetime object
-                          max_mq_time_str = str(max_mq_time) # Display as string if not datetime
-
-                     col3.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq_value:,.2f}")
-                     col3.write(f"at {max_mq_time_str}") # Display time below the metric
-                     # else: # Warning already handled by outer if
-                     #      col3.warning("Total_MQ column is not numeric.")
-
-                else:
-                     col3.info("Total_MQ data is all zero/null or not applicable for max metric.")
-
-            else:
-                 col3.warning("Max MQ or Time data not available or not numeric or empty.")
-
-
-            # --- Add WESM column (Total_BCQ - Total_MQ) to Hourly Summary ---
-            # Calculate the WESM column if the required columns exist and are numeric
-            if all(col in data.columns for col in ["Total_BCQ", "Total_MQ"]):
-                 if pd.api.types.is_numeric_dtype(data["Total_BCQ"]) and pd.api.types.is_numeric_dtype(data["Total_MQ"]):
-                     data['WESM'] = data['Total_BCQ'] - data['Total_MQ']
+                 # Format the time for display
+                 if pd.api.types.is_datetime64_any_dtype(max_mq_time):
+                      max_mq_time_str = max_mq_time.strftime("%H:%M")
                  else:
-                     st.warning("Could not calculate WESM column: Total_BCQ or Total_MQ are not numeric.")
+                      # Handle cases where max_mq_time might not be a datetime object
+                      max_mq_time_str = str(max_mq_time) # Display as string if not datetime
+
+                 col3.metric(label="Maximum Total MQ (kWh)", value=f"{max_mq_value:,.2f}")
+                 col3.write(f"at {max_mq_time_str}") # Display time below the metric
+                 # else: # Warning already handled by outer if
+                 #      col3.warning("Total_MQ column is not numeric.")
+
             else:
-                 st.warning("Could not calculate WESM column: Total_BCQ or Total_MQ columns not found.")
-
-
-            st.subheader("Hourly Summary")
-            st.dataframe(data) # Display fetched data including the new WESM column
-
-
-            # --- Create and Display BCQ Entity Pie Chart with WESM ---
-            st.subheader("BCQ Contribution and WESM")
-
-            # Prepare data for the pie chart
-            pie_chart_data = pd.DataFrame(columns=['Entity', 'Sum'])
-
-            if not entity_sums_df.empty:
-                 # Melt the entity sums dataframe
-                 # Use .iloc[0] to get the single row as a Series
-                 melted_entity_sums = entity_sums_df.iloc[0].melt(var_name='Entity', value_name='Sum')
-                 # Append to pie chart data
-                 pie_chart_data = pd.concat([pie_chart_data, melted_entity_sums], ignore_index=True)
-
-
-            # Calculate daily Total_BCQ and Total_MQ for WESM
-            daily_total_bcq = 0
-            daily_total_mq = 0
-            if "Total_BCQ" in data.columns and pd.api.types.is_numeric_dtype(data["Total_BCQ"]):
-                 daily_total_bcq = data["Total_BCQ"].sum()
-            if "Total_MQ" in data.columns and pd.api.types.is_numeric_dtype(data["Total_MQ"]):
-                 daily_total_mq = data["Total_MQ"].sum()
-
-            # Calculate WESM (Total_BCQ - Total_MQ) / -1000
-            wesm_value = 0
-            try:
-                wesm_value = (daily_total_bcq - daily_total_mq) / -1000
-            except ZeroDivisionError:
-                st.warning("Cannot calculate WESM (division by zero).")
-                wesm_value = 0 # Or handle as None/NaN
-
-
-            # Add WESM to the pie chart data
-            # Only add if there's other data or WESM is non-zero
-            if not pie_chart_data.empty or abs(wesm_value) > 1e-9: # Add WESM only if other data exists or WESM is significant
-                wesm_row = pd.DataFrame([{'Entity': 'WESM', 'Sum': wesm_value}])
-                pie_chart_data = pd.concat([pie_chart_data, wesm_row], ignore_index=True)
-
-
-            # Ensure the 'Sum' column is numeric before plotting
-            if 'Sum' in pie_chart_data.columns:
-                pie_chart_data['Sum'] = pd.to_numeric(pie_chart_data['Sum'], errors='coerce').fillna(0)
-                # Filter out entities with zero or NaN sum, unless it's WESM and non-zero
-                pie_chart_data = pie_chart_data[
-                    (pie_chart_data['Sum'] != 0) |
-                    (pie_chart_data['Entity'] == 'WESM')
-                ]
-                # Ensure WESM is included if its value is non-zero, even if other sums are zero
-                if 'WESM' in pie_chart_data['Entity'].tolist() and abs(wesm_value) > 1e-9 and 'WESM' not in pie_chart_data[pie_chart_data['Sum'] != 0]['Entity'].tolist():
-                    wesm_only_df = pd.DataFrame([{'Entity': 'WESM', 'Sum': wesm_value}])
-                    pie_chart_data = pd.concat([pie_chart_data[pie_chart_data['Entity'] != 'WESM'], wesm_only_df], ignore_index=True)
-
-
-            if not pie_chart_data.empty:
-                # Create the pie chart
-                base = alt.Chart(pie_chart_data).encode(
-                    theta=alt.Theta("Sum", stack=True) # Use Sum for the angle of slices
-                )
-
-                # Specify the outer radius of the arcs and encode color based on the entity
-                pie = base.mark_arc(outerRadius=120).encode(
-                    color=alt.Color("Entity"),
-                    # Order the arcs by `Sum` in descending order.
-                    order=alt.Order("Sum", sort="descending"),
-                    tooltip=["Entity", alt.Tooltip("Sum", format=",.1f")] # Add tooltips for Entity and Sum
-                )
-
-                # Add text labels
-                text = base.mark_text(radius=140).encode( # Adjust radius to position text outside slices
-                    text=alt.Text("Entity"), # Use Entity name as the label
-                    order=alt.Order("Sum", sort="descending"),
-                    color=alt.value("black") # Set the color of the labels
-                )
-
-                # Combine the pie chart and text
-                chart = pie + text
-
-                st.altair_chart(chart, use_container_width=True)
-            else:
-                st.info("Not enough data to display the BCQ contribution pie chart.")
+                 col3.info("Total_MQ data is all zero/null or not applicable for max metric.")
 
         else:
-            st.warning(f"No data available for selected date: {selected_date_str}.")
+             col3.warning("Max MQ or Time data not available or not numeric or empty.")
 
-        # Removed the section that displayed generator_data as requested
-        # if not generator_data.empty:
-        #     st.subheader("🔌 Generator BCQ Summary")
-        #     st.dataframe(generator_data)
+
+        # --- Add WESM column (Total_BCQ - Total_MQ) to Hourly Summary ---
+        # Calculate the WESM column if the required columns exist and are numeric
+        if all(col in data.columns for col in ["Total_BCQ", "Total_MQ"]):
+             if pd.api.types.is_numeric_dtype(data["Total_BCQ"]) and pd.api.types.is_numeric_dtype(data["Total_MQ"]):
+                 data['WESM'] = data['Total_BCQ'] - data['Total_MQ']
+             else:
+                 st.warning("Could not calculate WESM column: Total_BCQ or Total_MQ are not numeric.")
+        else:
+             st.warning("Could not calculate WESM column: Total_BCQ or Total_MQ columns not found.")
+
+
+        st.subheader("Hourly Summary")
+        st.dataframe(data) # Display fetched data including the new WESM column
+
+
+        # --- Create and Display BCQ Entity Pie Chart with WESM ---
+        st.subheader("BCQ Contribution and WESM")
+
+        # Prepare data for the pie chart
+        pie_chart_data = pd.DataFrame(columns=['Entity', 'Sum'])
+
+        if not entity_sums_df.empty:
+             # Melt the entity sums dataframe
+             # Use .iloc[0] to get the single row as a Series
+             melted_entity_sums = entity_sums_df.iloc[0].melt(var_name='Entity', value_name='Sum')
+             # Append to pie chart data
+             pie_chart_data = pd.concat([pie_chart_data, melted_entity_sums], ignore_index=True)
+
+
+        # Calculate daily Total_BCQ and Total_MQ for WESM
+        daily_total_bcq = 0
+        daily_total_mq = 0
+        if "Total_BCQ" in data.columns and pd.api.types.is_numeric_dtype(data["Total_BCQ"]):
+             daily_total_bcq = data["Total_BCQ"].sum()
+        if "Total_MQ" in data.columns and pd.api.types.is_numeric_dtype(data["Total_MQ"]):
+             daily_total_mq = data["Total_MQ"].sum()
+
+        # Calculate WESM (Total_BCQ - Total_MQ) / -1000
+        wesm_value = 0
+        try:
+            # Check if the divisor is zero before division
+            if -1000 != 0:
+                wesm_value = (daily_total_bcq - daily_total_mq) / -1000
+            else:
+                 st.warning("Cannot calculate WESM (division by zero).")
+                 wesm_value = 0 # Set to 0 if division is not possible
+        except Exception as e: # Catch any other potential errors during WESM calculation
+            st.error(f"Error calculating WESM: {e}")
+            wesm_value = 0 # Set to 0 on error
+
+
+        # Add WESM to the pie chart data
+        # Only add if there's other data or WESM is non-zero
+        # Use a small tolerance for checking if WESM is effectively zero
+        if not pie_chart_data.empty or abs(wesm_value) > 1e-9:
+            wesm_row = pd.DataFrame([{'Entity': 'WESM', 'Sum': wesm_value}])
+            pie_chart_data = pd.concat([pie_chart_data, wesm_row], ignore_index=True)
+
+
+        # Ensure the 'Sum' column is numeric before plotting
+        if 'Sum' in pie_chart_data.columns:
+            pie_chart_data['Sum'] = pd.to_numeric(pie_chart_data['Sum'], errors='coerce').fillna(0)
+            # Filter out entities with zero or NaN sum, unless it's WESM and non-zero
+            pie_chart_data = pie_chart_data[
+                (pie_chart_data['Sum'] != 0) |
+                (pie_chart_data['Entity'] == 'WESM')
+            ]
+            # Ensure WESM is included if its value is non-zero, even if other sums are zero
+            if 'WESM' in pie_chart_data['Entity'].tolist() and abs(wesm_value) > 1e-9 and 'WESM' not in pie_chart_data[pie_chart_data['Sum'] != 0]['Entity'].tolist():
+                wesm_only_df = pd.DataFrame([{'Entity': 'WESM', 'Sum': wesm_value}])
+                # Concatenate, making sure to not duplicate WESM if it was already included due to its value
+                pie_chart_data = pd.concat([pie_chart_data[pie_chart_data['Entity'] != 'WESM'], wesm_only_df], ignore_index=True)
+
+
+        if not pie_chart_data.empty:
+            # Create the pie chart
+            base = alt.Chart(pie_chart_data).encode(
+                theta=alt.Theta("Sum", stack=True) # Use Sum for the angle of slices
+            )
+
+            # Specify the outer radius of the arcs and encode color based on the entity
+            pie = base.mark_arc(outerRadius=120).encode(
+                color=alt.Color("Entity"),
+                # Order the arcs by `Sum` in descending order.
+                order=alt.Order("Sum", sort="descending"),
+                tooltip=["Entity", alt.Tooltip("Sum", format=",.1f")] # Add tooltips for Entity and Sum
+            )
+
+            # Add text labels
+            text = base.mark_text(radius=140).encode( # Adjust radius to position text outside slices
+                text=alt.Text("Entity"), # Use Entity name as the label
+                order=alt.Order("Sum", sort="descending"),
+                color=alt.value("black") # Set the color of the labels
+            )
+
+            # Combine the pie chart and text
+            chart = pie + text
+
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            st.info("Not enough data to display the BCQ contribution pie chart.")
+
+    else:
+        st.warning(f"No data available for selected date: {selected_date_str}.")
+
+    # Removed the section that displayed generator_data as requested
+    # if not generator_data.empty:
+    #     st.subheader("🔌 Generator BCQ Summary")
+    #     st.dataframe(generator_data)
 
     # --- End of main app content ---
