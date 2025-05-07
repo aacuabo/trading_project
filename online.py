@@ -90,19 +90,21 @@ def fetch_data(selected_date_str: str):
 
 # --- SANKEY CHART HELPER FUNCTIONS ---
 
-# IMPORTANT: Update the KEYS of this dictionary to your ACTUAL database column names from BCQ_Hourly
 GENERATOR_LONG_TO_SHORT_MAP = {
     "FDC_Misamis_Power_Corporation__FDC": 'FDC',
     "GNPower_Kauswagan_Ltd._Co._GNPKLCO": 'GNPK',
-    "Power_Sector_Assets_and_Liabilities_Management_Corporation_PSAL": 'PSALM', # Kept short name PSALM, DB col ends _PSAL
+    "Power_Sector_Assets_and_Liabilities_Management_Corporation_PSAL": 'PSALM',
     "Sarangani_Energy_Corporation_SEC": 'SEC',
     "Therma_South,_Inc._TSI": 'TSI',
     "Malita_Power_Inc._SMCPC": 'MPI'
 }
 
+# Columns to be scaled by 100 (these are the keys from GENERATOR_LONG_TO_SHORT_MAP)
+GENERATOR_COLUMNS_TO_SCALE = list(GENERATOR_LONG_TO_SHORT_MAP.keys())
+
 # IMPORTANT: VERIFY and UPDATE the KEYS of this dictionary to your ACTUAL database column names from MQ_Hourly
 DESTINATION_LONG_TO_SHORT_MAP = {
-    "14BGN_T1L1_KIDCOTE01_NET": 'M1/M6/M8', # Example: If actual name is C14BGN_T1L1_KIDCOTE01_NET, update key
+    "14BGN_T1L1_KIDCOTE01_NET": 'M1/M6/M8',
     "14BGN_T1L1_KIDCOTE02_NET": 'M2',
     "14BGN_T1L1_KIDCOTE03_NET": 'M3',
     "14BGN_T1L1_KIDCOTE04_NET": 'M4',
@@ -111,36 +113,19 @@ DESTINATION_LONG_TO_SHORT_MAP = {
     "14BGN_T1L1_KIDCOTE10_NET": 'M9',
     "14BGN_T1L1_KIDCSCV01_DEL": 'KIDCSCV01_DEL',
     "14BGN_T1L1_KIDCSCV02_DEL": 'KIDCSCV02_DEL'
-    # Add or modify entries here based on your actual MQ_Hourly column names for destinations
 }
-# Example of how you might need to change DESTINATION_LONG_TO_SHORT_MAP if names were altered:
-# DESTINATION_LONG_TO_SHORT_MAP = {
-#     "C14BGN_T1L1_KIDCOTE01_NET": 'M1/M6/M8', # Assuming 'C' was prepended or similar
-#     "C14BGN_T1L1_KIDCOTE02_NET": 'M2',
-#     ... etc.
-# }
-
 
 @st.cache_data(ttl=600)
 def fetch_sankey_generator_contributions(selected_date_str: str, interval_time_db_format: str):
-    """Fetches actual generator contributions from BCQ_Hourly for a specific date and time interval."""
+    """Fetches and scales generator contributions from BCQ_Hourly."""
     contributions = {short_name: 0.0 for short_name in GENERATOR_LONG_TO_SHORT_MAP.values()}
     if not GENERATOR_LONG_TO_SHORT_MAP:
         st.warning("Generator mapping is empty. Cannot fetch contributions.")
         return contributions
     try:
         engine = get_sqlalchemy_engine()
-        # Keys of GENERATOR_LONG_TO_SHORT_MAP are the exact column names in BCQ_Hourly
-        # These column names might not need explicit double quotes if they are simple identifiers (no spaces, standard chars)
-        # However, quoting them is safer.
-        query_columns_list = []
-        for col_name in GENERATOR_LONG_TO_SHORT_MAP.keys():
-            # If column names are simple like FDC_Misamis_Power_Corporation__FDC,
-            # they might not strictly need double quotes in PostgreSQL, but it's safer.
-            # If they contain spaces or special characters (which yours now don't seem to), they MUST be quoted.
-            query_columns_list.append(f'"{col_name}"')
+        query_columns_list = [f'"{col_name}"' for col_name in GENERATOR_LONG_TO_SHORT_MAP.keys()]
         query_columns_str = ', '.join(query_columns_list)
-
 
         query = f"""
             SELECT {query_columns_str}
@@ -148,7 +133,6 @@ def fetch_sankey_generator_contributions(selected_date_str: str, interval_time_d
             WHERE "Date" = %(selected_date)s AND "Time" = %(interval_time)s;
         """
         params = {"selected_date": selected_date_str, "interval_time": interval_time_db_format}
-        # st.write(f"DEBUG SQL Gen: {query} with params {params}") # Uncomment for debugging SQL
         interval_data_df = pd.read_sql(query, engine, params=params)
 
         if not interval_data_df.empty:
@@ -156,27 +140,28 @@ def fetch_sankey_generator_contributions(selected_date_str: str, interval_time_d
             for long_name, short_name in GENERATOR_LONG_TO_SHORT_MAP.items():
                 if long_name in row:
                     value = pd.to_numeric(row[long_name], errors='coerce')
-                    contributions[short_name] = value if pd.notna(value) and value > 0 else 0.0
-        # else:
-            # st.info(f"No generator contribution data found in BCQ_Hourly for {selected_date_str} at {interval_time_db_format}.")
+                    if pd.notna(value):
+                        if long_name in GENERATOR_COLUMNS_TO_SCALE: # Apply scaling
+                            value *= 100
+                        contributions[short_name] = value if value > 0 else 0.0
+                    else:
+                        contributions[short_name] = 0.0
         return contributions
     except Exception as e:
         st.error(f"Error fetching Sankey generator contributions: {e}")
-        # st.exception(e) # Uncomment for more detailed traceback in Streamlit during development
         return contributions
 
 @st.cache_data(ttl=600)
 def fetch_sankey_destination_consumption(selected_date_str: str, interval_time_db_format: str):
-    """Fetches actual destination consumption from MQ_Hourly for a specific date and time interval."""
+    """Fetches actual destination consumption from MQ_Hourly."""
+    # This function remains unchanged as destination consumptions are not scaled by 100.
     consumption = {short_name: 0.0 for short_name in DESTINATION_LONG_TO_SHORT_MAP.values()}
     if not DESTINATION_LONG_TO_SHORT_MAP:
         st.warning("Destination mapping is empty. Cannot fetch consumption.")
         return consumption
     try:
         engine = get_sqlalchemy_engine()
-        query_columns_list = []
-        for col_name in DESTINATION_LONG_TO_SHORT_MAP.keys():
-            query_columns_list.append(f'"{col_name}"') # Quote column names
+        query_columns_list = [f'"{col_name}"' for col_name in DESTINATION_LONG_TO_SHORT_MAP.keys()]
         query_columns_str = ', '.join(query_columns_list)
 
         query = f"""
@@ -185,7 +170,6 @@ def fetch_sankey_destination_consumption(selected_date_str: str, interval_time_d
             WHERE "Date" = %(selected_date)s AND "Time" = %(interval_time)s;
         """
         params = {"selected_date": selected_date_str, "interval_time": interval_time_db_format}
-        # st.write(f"DEBUG SQL Dest: {query} with params {params}") # Uncomment for debugging SQL
         interval_data_df = pd.read_sql(query, engine, params=params)
 
         if not interval_data_df.empty:
@@ -194,34 +178,39 @@ def fetch_sankey_destination_consumption(selected_date_str: str, interval_time_d
                 if long_name in row:
                     value = pd.to_numeric(row[long_name], errors='coerce')
                     consumption[short_name] = value if pd.notna(value) and value > 0 else 0.0
-        # else:
-            # st.info(f"No destination consumption data found in MQ_Hourly for {selected_date_str} at {interval_time_db_format}.")
         return consumption
     except Exception as e:
         st.error(f"Error fetching Sankey destination consumption: {e}")
-        # st.exception(e) # Uncomment for more detailed traceback in Streamlit during development
         return consumption
 
-def create_sankey_chart(interval_mq_val: float, interval_wesm_val: float, selected_date_str: str, interval_time_hh_mm_str: str):
-    if pd.isna(interval_mq_val) or interval_mq_val < 0:
-        st.info(f"Max Interval MQ is invalid ({interval_mq_val:,.0f} kWh) for {interval_time_hh_mm_str} on {selected_date_str}. Sankey not generated.")
-        return None
-    if interval_mq_val == 0 and (pd.isna(interval_wesm_val) or interval_wesm_val <= 0):
-         if not (interval_wesm_val > 0) :
-            st.info(f"Max Interval MQ is zero and no significant WESM activity for {interval_time_hh_mm_str} on {selected_date_str}. Sankey not generated.")
-            return None
-            
-    if pd.isna(interval_wesm_val):
-        interval_wesm_val = 0
+def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: float, selected_date_str: str, interval_time_hh_mm_str: str):
+    # interval_mq_val is Total_MQ for the interval (unscaled)
+    # interval_wesm_val_unscaled is (Total_BCQ_unscaled - Total_MQ_unscaled) for the interval
 
-    actual_total_bcq_for_interval = interval_mq_val + interval_wesm_val
-    actual_total_mq_for_interval = interval_mq_val
+    if pd.isna(interval_mq_val) or interval_mq_val < 0:
+        st.info(f"Interval MQ is invalid ({interval_mq_val:,.0f} kWh) for {interval_time_hh_mm_str} on {selected_date_str}. Sankey not generated.")
+        return None
 
     interval_time_db_format = interval_time_hh_mm_str + ":00" # Assumes DB Time is HH:MM:SS string
 
-    generator_contributions = fetch_sankey_generator_contributions(selected_date_str, interval_time_db_format)
+    # Fetch generator contributions (these are now scaled by 100x inside the function)
+    scaled_generator_contributions = fetch_sankey_generator_contributions(selected_date_str, interval_time_db_format)
+    # Fetch destination consumptions (unscaled)
     destination_consumptions = fetch_sankey_destination_consumption(selected_date_str, interval_time_db_format)
-    
+
+    sum_scaled_generator_contributions = sum(v for v in scaled_generator_contributions.values() if pd.notna(v))
+    actual_total_mq_for_interval = interval_mq_val # This is the unscaled MQ
+
+    # Recalculate WESM balance based on scaled generation and unscaled MQ
+    # This WESM value determines import/export for the Sankey logic
+    wesm_value_for_sankey = sum_scaled_generator_contributions - actual_total_mq_for_interval
+
+    # Condition for generating Sankey:
+    # Need either significant scaled generation or significant MQ.
+    if sum_scaled_generator_contributions < 0.01 and actual_total_mq_for_interval < 0.01 :
+         st.info(f"Scaled generation and MQ are too low for {interval_time_hh_mm_str} on {selected_date_str} to draw Sankey. Scaled Gen: {sum_scaled_generator_contributions:,.2f}, MQ: {actual_total_mq_for_interval:,.2f}")
+         return None
+
     sankey_node_labels, node_indices, sankey_sources_indices, sankey_targets_indices, sankey_values, node_colors = [], {}, [], [], [], []
     
     def add_node(label, color="grey"):
@@ -231,65 +220,86 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val: float, select
             node_colors.append(color)
         return node_indices[label]
 
-    middle_node_label = f"Distribution Hub ({actual_total_bcq_for_interval:,.0f} kWh)"
-    middle_node_idx = add_node(middle_node_label, "orange")
+    # Central Junction Node
+    # Total energy flowing through this junction:
+    # Input: sum_scaled_generator_contributions + WESM_Import (if any)
+    # Output: actual_total_mq_for_interval + WESM_Export (if any)
+    # These two sums are equal.
+    total_flow_through_junction = sum_scaled_generator_contributions
+    if wesm_value_for_sankey < 0: # WESM Import
+        total_flow_through_junction += abs(wesm_value_for_sankey)
+    
+    junction_node_label = f"Energy Junction ({total_flow_through_junction:,.0f} kWh)"
+    junction_node_idx = add_node(junction_node_label, "grey")
 
-    total_gen_contribution_value = sum(v for v in generator_contributions.values() if pd.notna(v) and v > 0.01)
+    # --- Links TO Junction Node ---
+    # 1. Scaled Generator Contributions
+    for short_name, value in scaled_generator_contributions.items():
+        if value > 0.01: # Only show significant contributions
+            # Percentage relative to total scaled generation
+            percentage_of_total_scaled_gen = (value / sum_scaled_generator_contributions * 100) if sum_scaled_generator_contributions > 0 else 0
+            gen_node_label = f"Gen: {short_name} ({value:,.0f} kWh, {percentage_of_total_scaled_gen:.1f}%)"
+            gen_node_idx = add_node(gen_node_label, "blue")
+            sankey_sources_indices.append(gen_node_idx)
+            sankey_targets_indices.append(junction_node_idx)
+            sankey_values.append(value)
 
-    if total_gen_contribution_value > 0.01 :
-        for short_name, value in generator_contributions.items():
-            if value > 0.01:
-                percentage_of_total_bcq = (value / actual_total_bcq_for_interval * 100) if actual_total_bcq_for_interval > 0 else 0
-                gen_node_label = f"Gen: {short_name} ({value:,.0f} kWh, {percentage_of_total_bcq:.1f}%)"
-                gen_node_idx = add_node(gen_node_label, "blue")
-                sankey_sources_indices.append(gen_node_idx)
-                sankey_targets_indices.append(middle_node_idx)
-                sankey_values.append(value)
-
-    if interval_wesm_val < 0:
-        import_value = abs(interval_wesm_val)
+    # 2. WESM Import (if wesm_value_for_sankey < 0)
+    if wesm_value_for_sankey < 0:
+        import_value = abs(wesm_value_for_sankey)
         if import_value > 0.01:
-            # Total supply to hub = local generation (BCQ component from generators) + WESM Import
-            # Here, actual_total_bcq_for_interval represents the BCQ part from generators.
-            # The total energy handled by the hub on the supply side would be actual_total_bcq_for_interval + import_value.
-            # This sum is actually equal to MQ in this case (since BCQ + Import = MQ).
-            total_hub_supply = actual_total_bcq_for_interval + import_value 
-            percentage = (import_value / total_hub_supply * 100) if total_hub_supply > 0 else 0
-            wesm_label = f"WESM Import ({import_value:,.0f} kWh, {percentage:.1f}%)"
-            wesm_node_idx = add_node(wesm_label, "red")
-            sankey_sources_indices.append(wesm_node_idx)
-            sankey_targets_indices.append(middle_node_idx)
+            # Percentage relative to total flow into junction
+            percentage_of_total_flow = (import_value / total_flow_through_junction * 100) if total_flow_through_junction > 0 else 0
+            wesm_import_label = f"WESM Import ({import_value:,.0f} kWh, {percentage_of_total_flow:.1f}%)"
+            wesm_import_node_idx = add_node(wesm_import_label, "red")
+            sankey_sources_indices.append(wesm_import_node_idx)
+            sankey_targets_indices.append(junction_node_idx)
             sankey_values.append(import_value)
 
-    if actual_total_mq_for_interval > 0.01 :
-        local_demand_node_label = f"Local Demand (MQ) ({actual_total_mq_for_interval:,.0f} kWh)"
-        local_demand_node_idx = add_node(local_demand_node_label, "lightgreen")
-        sankey_sources_indices.append(middle_node_idx)
-        sankey_targets_indices.append(local_demand_node_idx)
-        sankey_values.append(actual_total_mq_for_interval)
+    # --- Links FROM Junction Node ---
+    # 1. To Individual Local Loads (Destination Consumptions)
+    # Sum of destination_consumptions should ideally be actual_total_mq_for_interval
+    sum_destination_consumptions = sum(v for v in destination_consumptions.values() if pd.notna(v) and v > 0.01)
 
+    if sum_destination_consumptions > 0.01: # If there is any local consumption
+        # Create an aggregated "Local Demand (MQ)" node if you want to show MQ as a single block from junction
+        # For more directness, link junction to individual loads if preferred.
+        # Let's link junction to an aggregated MQ node, then MQ node to individual loads.
+        # This keeps the Sankey structure a bit cleaner if many loads.
+        # If you prefer junction -> individual loads directly, this part needs change.
+
+        # Aggregated MQ Node (optional, can connect junction directly to loads)
+        # mq_aggregate_label = f"Local Demand (MQ) ({actual_total_mq_for_interval:,.0f} kWh)"
+        # mq_aggregate_node_idx = add_node(mq_aggregate_label, "lightgreen")
+        # sankey_sources_indices.append(junction_node_idx)
+        # sankey_targets_indices.append(mq_aggregate_node_idx)
+        # sankey_values.append(actual_total_mq_for_interval) # Total MQ flows from Junction to MQ Agg.
+
+        # Individual loads from MQ Aggregate Node
         for short_name, value in destination_consumptions.items():
             if value > 0.01:
                 percentage_of_total_mq = (value / actual_total_mq_for_interval * 100) if actual_total_mq_for_interval > 0 else 0
                 dest_node_label = f"Load: {short_name} ({value:,.0f} kWh, {percentage_of_total_mq:.1f}%)"
                 dest_node_idx = add_node(dest_node_label, "green")
-                sankey_sources_indices.append(local_demand_node_idx)
+                sankey_sources_indices.append(junction_node_idx) # Link from Junction directly to load
                 sankey_targets_indices.append(dest_node_idx)
                 sankey_values.append(value)
     
-    if interval_wesm_val > 0:
-        export_value = interval_wesm_val
+    # 2. To WESM Export (if wesm_value_for_sankey > 0)
+    if wesm_value_for_sankey > 0:
+        export_value = wesm_value_for_sankey
         if export_value > 0.01:
-            percentage = (export_value / actual_total_bcq_for_interval) * 100 if actual_total_bcq_for_interval > 0 else 0
-            wesm_label = f"WESM Export ({export_value:,.0f} kWh, {percentage:.1f}%)"
-            wesm_node_idx = add_node(wesm_label, "purple")
-            sankey_sources_indices.append(middle_node_idx)
-            sankey_targets_indices.append(wesm_node_idx)
+            # Percentage relative to total flow from junction (or total scaled gen if export is seen as % of gen)
+            percentage_of_total_flow = (export_value / total_flow_through_junction * 100) if total_flow_through_junction > 0 else 0
+            wesm_export_label = f"WESM Export ({export_value:,.0f} kWh, {percentage_of_total_flow:.1f}%)"
+            wesm_export_node_idx = add_node(wesm_export_label, "purple")
+            sankey_sources_indices.append(junction_node_idx)
+            sankey_targets_indices.append(wesm_export_node_idx)
             sankey_values.append(export_value)
             
     if not sankey_values or sum(sankey_values) < 0.1:
         sum_vals = sum(sankey_values) if sankey_values else 0
-        st.info(f"Not enough significant flow data for Max MQ interval ({interval_time_hh_mm_str}) on {selected_date_str} to draw Sankey chart. Sum of values: {sum_vals:.2f}")
+        st.info(f"Not enough significant flow data for interval ({interval_time_hh_mm_str}) on {selected_date_str} to draw Sankey. Sum of values: {sum_vals:.2f}")
         return None
     
     fig = go.Figure(data=[go.Sankey(
@@ -300,7 +310,11 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val: float, select
     fig.update_layout(title_text=f"Energy Flow for Interval ({interval_time_hh_mm_str}) on {selected_date_str}", font_size=10, height=700)
     return fig
 
-# --- STREAMLIT UI (main, show_dashboard, show_about_page functions remain the same as in the previous correct version) ---
+# --- STREAMLIT UI (main, show_dashboard, show_about_page functions) ---
+# These functions largely remain the same. The key is that show_dashboard()
+# passes the unscaled interval_mq_val and unscaled interval_wesm_val to create_sankey_chart.
+# create_sankey_chart then handles scaling and recalculation for Sankey logic.
+
 def main():
     st.title("📊 Daily Energy Trading Dashboard")
     st.sidebar.header("Navigation")
@@ -312,7 +326,7 @@ def main():
     else: show_dashboard()
 
 def show_dashboard():
-    spacer_left, main_content, spacer_right = st.columns([0.2, 5, 0.2]) 
+    spacer_left, main_content, spacer_right = st.columns([0.1, 5.8, 0.1]) 
     with main_content:
         available_dates = fetch_available_dates()
         if not available_dates:
@@ -336,7 +350,7 @@ def show_dashboard():
         if all(c in data.columns for c in ["Total_BCQ", "Total_MQ"]) and \
            pd.api.types.is_numeric_dtype(data["Total_BCQ"]) and \
            pd.api.types.is_numeric_dtype(data["Total_MQ"]):
-            data['WESM'] = data['Total_BCQ'] - data['Total_MQ']
+            data['WESM'] = data['Total_BCQ'] - data['Total_MQ'] # Unscaled WESM for general display
         else:
             data['WESM'] = pd.NA
             st.warning("Could not calculate WESM as Total_BCQ or Total_MQ is missing or not numeric.")
@@ -352,13 +366,15 @@ def show_dashboard():
 
         max_mq_val_display, max_mq_time_display = "N/A", "N/A"
         if "Total_MQ" in data.columns and pd.api.types.is_numeric_dtype(data["Total_MQ"]) and not data["Total_MQ"].isnull().all():
-            max_mq_val = data["Total_MQ"].max(skipna=True)
-            if pd.notna(max_mq_val):
-                max_mq_idx = data["Total_MQ"].idxmax(skipna=True)
-                t_obj = data.loc[max_mq_idx, "Time"]
-                t_str = t_obj.strftime("%H:%M") if pd.notna(t_obj) and hasattr(t_obj, 'strftime') else "N/A"
-                max_mq_val_display = f"{max_mq_val:,.2f}"
-                max_mq_time_display = f"at {t_str}"
+            max_mq_val_for_day = data["Total_MQ"].max(skipna=True)
+            if pd.notna(max_mq_val_for_day):
+                # For Sankey, we use the interval of max MQ.
+                # For display here, it's just the max MQ value of the day.
+                max_mq_idx_for_day_display = data["Total_MQ"].idxmax(skipna=True)
+                t_obj_display = data.loc[max_mq_idx_for_day_display, "Time"]
+                t_str_display = t_obj_display.strftime("%H:%M") if pd.notna(t_obj_display) and hasattr(t_obj_display, 'strftime') else "N/A"
+                max_mq_val_display = f"{max_mq_val_for_day:,.2f}"
+                max_mq_time_display = f"at {t_str_display}"
                 col4.metric("Max Total MQ", max_mq_val_display, max_mq_time_display)
             else: col4.info("MQ all NaN.")
         else: col4.warning("MQ N/A")
@@ -372,7 +388,7 @@ def show_dashboard():
             st.dataframe(df_display.style.format(precision=2, na_rep="N/A"),height=300, use_container_width=True)
         with tbl_tabs[1]:
             s_dict = {}
-            for c in ["Total_MQ", "Total_BCQ", "WESM"]:
+            for c in ["Total_MQ", "Total_BCQ", "WESM"]: # These are based on unscaled data from fetch_data
                 if c in data and pd.api.types.is_numeric_dtype(data[c]):
                     s_dict[f"{c} (kWh)"] = data[c].sum(skipna=True)
                 else:
@@ -394,18 +410,16 @@ def show_dashboard():
                     ep_c = [c for c in ["Total_MQ", "Total_BCQ", "Prices"] if c in melt_cols]
                     if ep_c:
                         melt_ep = data.melt(id_vars=["Time"], value_vars=ep_c, var_name="Metric", value_name="Value").dropna(subset=['Value'])
-                        
                         base_chart = alt.Chart(melt_ep).encode(x=alt.X("Time:T", title="Time", axis=alt.Axis(format="%H:%M")))
-                        
-                        line_charts = alt.Chart(pd.DataFrame()) # Placeholder
-                        bar_chart = alt.Chart(pd.DataFrame())   # Placeholder
+                        line_charts = alt.Chart(pd.DataFrame()) 
+                        bar_chart = alt.Chart(pd.DataFrame())  
 
                         energy_metrics = [m for m in ["Total_MQ", "Total_BCQ"] if m in ep_c]
                         if energy_metrics:
                             line_charts = base_chart.transform_filter(
                                 alt.FieldOneOfPredicate(field='Metric', oneOf=energy_metrics)
                             ).mark_line(point=True).encode(
-                                y=alt.Y("Value:Q", title="Energy (kWh)", scale=alt.Scale(zero=True)),
+                                y=alt.Y("Value:Q", title="Energy (kWh)", scale=alt.Scale(zero=False)), # Changed zero to False for better viz if values are far from zero
                                 color=alt.Color("Metric:N", legend=alt.Legend(orient='bottom'), 
                                                 scale=alt.Scale(domain=['Total_MQ', 'Total_BCQ'], range=['#FFC20A', '#1A85FF'])),
                                 tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
@@ -415,7 +429,7 @@ def show_dashboard():
                             bar_chart = base_chart.transform_filter(
                                 alt.datum.Metric == "Prices"
                             ).mark_bar(color="#40B0A6").encode(
-                                y=alt.Y("Value:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=True)),
+                                y=alt.Y("Value:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=False)), # Changed zero to False
                                 tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
                             )
                         
@@ -430,7 +444,7 @@ def show_dashboard():
                         
                         st.altair_chart(comb_ch.properties(title=f"Metrics for {selected_date_str}").interactive(), use_container_width=True)
                     else: st.info("No MQ, BCQ or Price data for this chart.")
-                with chart_tabs[1]:
+                with chart_tabs[1]: # WESM chart (based on unscaled WESM)
                     if "WESM" in melt_cols:
                         wesm_d = data[["Time", "WESM"]].dropna(subset=["WESM"])
                         if not wesm_d.empty:
@@ -439,88 +453,94 @@ def show_dashboard():
                                 y=alt.Y("WESM:Q", title="WESM Balance (kWh)"),
                                 color=alt.condition(alt.datum.WESM < 0, alt.value("#ff9900"), alt.value("#4c78a8")),
                                 tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), alt.Tooltip("WESM:Q", format=",.2f")]
-                            ).properties(title=f"WESM Hourly Balance for {selected_date_str}", height=400).interactive()
+                            ).properties(title=f"WESM Hourly Balance for {selected_date_str} (based on unscaled data)", height=400).interactive()
                             st.altair_chart(ch_wesm, use_container_width=True)
                             wt = wesm_d["WESM"].sum(); 
                             ws = f"Net Import ({abs(wt):,.2f} kWh)" if wt < 0 else (f"Net Export ({wt:,.2f} kWh)" if wt > 0 else "Balanced (0 kWh)")
-                            st.info(f"Daily WESM: {ws}")
+                            st.info(f"Daily WESM (unscaled): {ws}")
                         else: st.info("No WESM data for chart.")
                     else: st.info("WESM data column N/A or all NaN.")
             else: st.warning(f"Plotting columns missing/null for {selected_date_str}.")
         else: st.warning("Time column invalid for charts.")
 
+        # Sankey Chart Section
         max_mq_interval_time_str_header = ""
         can_gen_sankey = False
-        int_mq_sankey, int_bcq_sankey, int_wesm_sankey_interval = 0.0, 0.0, 0.0
+        # These are unscaled values for the chosen interval, fetched from the main 'data' DataFrame
+        interval_mq_unscaled, interval_bcq_unscaled, interval_wesm_unscaled = 0.0, 0.0, 0.0
 
+        # Find the interval of maximum Total_MQ for the Sankey chart
         if "Total_MQ" in data.columns and not data["Total_MQ"].isnull().all() and \
-           "Total_BCQ" in data.columns and not data["Total_BCQ"].isnull().all() :
-            max_mq_day_val = data["Total_MQ"].max(skipna=True) # Can be 0 or negative, but we want the interval
+           "Total_BCQ" in data.columns: # BCQ needed for context, even if it might be all NaN for the interval
             
-            if pd.notna(max_mq_day_val): # If max_mq_day_val is NaN, means all MQ are NaN
-                # Find the row corresponding to the maximum Total_MQ for the day
-                # If multiple intervals have the same max MQ, idxmax() picks the first.
-                max_mq_row_idx = data["Total_MQ"].idxmax(skipna=True) 
-                max_mq_row = data.loc[max_mq_row_idx]
+            max_mq_val_for_day = data["Total_MQ"].max(skipna=True)
 
-                int_mq_sankey = max_mq_row["Total_MQ"]
-                if pd.isna(int_mq_sankey): int_mq_sankey = 0.0
+            if pd.notna(max_mq_val_for_day):
+                sankey_interval_idx = data["Total_MQ"].idxmax(skipna=True)
+                sankey_interval_row = data.loc[sankey_interval_idx]
 
-                int_bcq_sankey = max_mq_row["Total_BCQ"]
-                if pd.isna(int_bcq_sankey): int_bcq_sankey = 0.0
+                interval_mq_unscaled = sankey_interval_row["Total_MQ"]
+                if pd.isna(interval_mq_unscaled): interval_mq_unscaled = 0.0
                 
-                int_wesm_sankey_interval = int_bcq_sankey - int_mq_sankey
+                # Get BCQ for this specific interval. It might be NaN.
+                if "Total_BCQ" in sankey_interval_row and pd.notna(sankey_interval_row["Total_BCQ"]):
+                    interval_bcq_unscaled = sankey_interval_row["Total_BCQ"]
+                else: # If Total_BCQ is NaN for this specific interval in the main data
+                    interval_bcq_unscaled = 0.0 
+                    # st.warning(f"Total_BCQ is N/A for the Sankey interval ({sankey_interval_row['Time']:%H:%M}). WESM for Sankey will assume 0 unscaled BCQ for this interval if MQ is also 0.")
+                
+                interval_wesm_unscaled = interval_bcq_unscaled - interval_mq_unscaled
 
-                if int_mq_sankey >= 0 or int_bcq_sankey > 0.001: # Allow MQ=0 if BCQ>0 (export)
-                    time_obj = max_mq_row["Time"]
-                    if pd.notna(time_obj) and hasattr(time_obj, 'strftime'):
-                        max_mq_interval_time_str_header = time_obj.strftime("%H:%M")
-                        can_gen_sankey = True
-                    else:
-                        max_mq_interval_time_str_header = str(time_obj)
-                        st.warning(f"Time object for max MQ interval is not standard: {time_obj}. Sankey might use this as label.")
-                        can_gen_sankey = True # Still try
-                else:
-                     can_gen_sankey = False
+                time_obj = sankey_interval_row["Time"]
+                if pd.notna(time_obj) and hasattr(time_obj, 'strftime'):
+                    max_mq_interval_time_str_header = time_obj.strftime("%H:%M")
+                    # Condition to generate Sankey: MQ >= 0 and (MQ > 0 or unscaled BCQ > 0 to allow for pure export if MQ is 0)
+                    if interval_mq_unscaled >= 0 and (interval_mq_unscaled > 0.001 or interval_bcq_unscaled > 0.001):
+                         can_gen_sankey = True
+                else: # Fallback for time string
+                    max_mq_interval_time_str_header = str(time_obj)
+                    can_gen_sankey = True # Attempt anyway
         
         if can_gen_sankey:
             st.subheader(f"⚡ Energy Flow for Interval ({max_mq_interval_time_str_header} on {selected_date_str})")
-            sankey_fig = create_sankey_chart(int_mq_sankey, int_wesm_sankey_interval, selected_date_str, max_mq_interval_time_str_header)
+            # Pass the unscaled MQ and unscaled WESM for that interval
+            # create_sankey_chart will handle fetching scaled generator data and recalculating WESM for its internal logic
+            sankey_fig = create_sankey_chart(interval_mq_unscaled, interval_wesm_unscaled, selected_date_str, max_mq_interval_time_str_header)
             if sankey_fig: st.plotly_chart(sankey_fig, use_container_width=True)
         else:
             st.subheader("⚡ Energy Flow Sankey Chart")
-            st.info("Sankey chart not generated. Conditions not met (e.g., Max Total MQ and relevant BCQ for the max MQ interval are zero, negative, or data unavailable).")
+            st.info("Sankey chart not generated. Conditions for the chosen interval not met (e.g., MQ and unscaled BCQ are zero or unavailable).")
 
 
 def show_about_page():
     st.header("About This Dashboard")
     st.write("""
-    ### Energy Trading Dashboard
-    This dashboard provides visualization and analysis of energy trading data, including:
-    - Metered quantities (MQ), Bilateral contract quantities (BCQ)
-    - WESM (Wholesale Electricity Spot Market) balances calculated as `Total_BCQ - Total_MQ`.
-    - Generator contributions sourced from `BCQ_Hourly` table columns for the specific interval.
-    - Destination/Load consumption sourced from `MQ_Hourly` table columns for the specific interval.
-    - Energy flow visualization (Sankey diagram) for the interval of maximum MQ on the selected day.
+    ### Energy Trading Dashboard V1.5
+    This dashboard provides visualization and analysis of energy trading data.
+    - **Data Source**: Hourly measurements from a PostgreSQL database.
+    - **Metrics**: Metered Quantities (MQ), Bilateral Contract Quantities (BCQ), Prices.
+    - **WESM Balance**: Calculated as `Total_BCQ - Total_MQ` (using unscaled data for general charts).
     
-    Data is sourced from a PostgreSQL database with hourly measurements. The Sankey diagram's generator and load breakdowns are now based on actual column data from their respective tables for the specific interval.
+    #### Sankey Diagram Specifics:
+    - **Interval**: Shows energy flow for the hourly interval with the highest `Total_MQ` on the selected day.
+    - **Generator Data**: Fetched from `BCQ_Hourly` table. Values for specific generators (FDC, GNPK, PSALM, SEC, TSI, MPI) are **multiplied by 100** for the Sankey display.
+    - **Load Data**: Fetched from `MQ_Hourly` table (unscaled).
+    - **WESM for Sankey**: Recalculated based on the **scaled** generator total and unscaled MQ for the interval.
+    - **Structure**: Simplified to show direct flows from sources (Scaled Generators, WESM Import) via a central "Energy Junction" to sinks (Individual Loads, WESM Export).
     
     ### Features
-    - Interactive date selection with session state persistence.
-    - Summary metrics for prices, MQ.
-    - Tabbed data tables for hourly figures and daily summaries.
-    - Interactive Altair charts for time-series data, including WESM balance.
-    - Sankey diagram detailing energy flow for the specific interval of maximum MQ, using actual data from `BCQ_Hourly` (for generation sources) and `MQ_Hourly` (for consumption sinks).
+    - Interactive date selection.
+    - Summary metrics and data tables.
+    - Time-series charts for energy and prices.
+    - Detailed Sankey diagram for the peak MQ interval.
     
-    ### WESM Interpretation
-    - **WESM Value = Total_BCQ - Total_MQ** (for each interval)
-    - **Negative WESM values** (i.e., MQ > BCQ for an interval) indicate a **Net Import** from WESM during that interval.
-    - **Positive WESM values** (i.e., BCQ > MQ for an interval) indicate a **Net Export** to WESM during that interval.
-    This interpretation is reflected in the WESM chart colors and the Sankey diagram logic.
+    ### WESM Interpretation (General Charts)
+    - `WESM = Total_BCQ - Total_MQ` (unscaled).
+    - Negative WESM: Net Import. Positive WESM: Net Export.
     
-    ### Need Help?
-    Contact the system administrator for issues or questions.
+    For issues, contact the system administrator.
     """)
-    st.markdown("---"); st.markdown(f"<p style='text-align: center;'>App Version 1.4 (DB Column Name Fix) | Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>", unsafe_allow_html=True)
+    st.markdown("---"); st.markdown(f"<p style='text-align: center;'>App Version 1.5 (Scaled Gen & Simplified Sankey) | Last Updated: {datetime.now(datetime.now().astimezone().tzinfo).strftime('%Y-%m-%d %H:%M:%S %Z')}</p>", unsafe_allow_html=True)
+
 
 if __name__ == "__main__": main()
