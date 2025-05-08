@@ -247,7 +247,7 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
     if wesm_value_for_sankey < 0:  # WESM Import
         total_flow_through_junction += abs(wesm_value_for_sankey)
     
-    junction_node_label = f"Energy Junction ({total_flow_through_junction:,.0f} kWh)"
+    junction_node_label = f"Max Demand ({total_flow_through_junction:,.0f} kWh)"
     junction_node_idx = add_node(junction_node_label, COLOR_PALETTE["junction"])
 
     # --- Links TO Junction Node ---
@@ -550,7 +550,7 @@ def show_about_page():
     - **Generator Data**: Fetched from `BCQ_Hourly` table. Values for specific generators (FDC, GNPK, PSALM, SEC, TSI, MPI) are **multiplied by 100** for the Sankey display.
     - **Load Data**: Fetched from `MQ_Hourly` table (unscaled).
     - **WESM for Sankey**: Recalculated based on the **scaled** generator total and unscaled MQ for the interval.
-    - **Structure**: Simplified to show direct flows from sources (Scaled Generators, WESM Import) via a central "Energy Junction" to sinks (Individual Loads, WESM Export).
+    - **Structure**: Simplified to show direct flows from sources (Scaled Generators, WESM Import) via a central "Max Demand" to sinks (Individual Loads, WESM Export).
     
     ### Features
     - Interactive date selection.
