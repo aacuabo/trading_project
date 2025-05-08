@@ -577,6 +577,9 @@ def main():
     
     if st.session_state.authenticated:
         app_content()
-
+        
+if st.button("Rerun"):
+    st.rerun()
+    
 if __name__ == "__main__":
     main()
