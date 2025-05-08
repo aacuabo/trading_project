@@ -223,14 +223,14 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
     sankey_node_labels, node_indices = [], {}
     sankey_sources_indices, sankey_targets_indices, sankey_values = [], [], []
     
-    # Define a colorblind-friendly palette
-    # Based on ColorBrewer and Wong's color schemes for colorblind accessibility
+    # Define a colorblind-friendly palette that works in both light and dark modes
+    # Using higher contrast colors with better accessibility
     COLOR_PALETTE = {
-        "junction": "#f0e442",         # Gray
-        "generator": "#0072B2",        # Blue
-        "wesm_import": "#009e73",      # Vermilion (darker orange)
-        "load": "#d55e00",             # Green
-        "wesm_export": "#CC79A7"       # Reddish purple
+        "junction": "#FFC107",         # Amber - visible in both modes
+        "generator": "#3F51B5",        # Indigo - good contrast in both modes
+        "wesm_import": "#4CAF50",      # Green - visible in both modes
+        "load": "#F44336",             # Red - high visibility
+        "wesm_export": "#9C27B0"       # Purple - distinctive in both modes
     }
     
     node_colors = []
@@ -307,7 +307,7 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
         node=dict(
             pad=20,  
             thickness=15,
-            line=dict(color="#A9A9A9", width=0.5),
+            line=dict(color="#888888", width=0.5),  # More neutral border color
             label=sankey_node_labels,
             color=node_colors
         ),
@@ -323,11 +323,11 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
     fig.update_layout(
         title=dict(
             text=f"Energy Flow: {interval_time_hh_mm_str}, {selected_date_str}",
-            font=dict(size=16, color='#333333')
+            font=dict(size=16)  # Removed fixed color for better dark/light mode compatibility
         ),
-        font=dict(family="Arial, sans-serif", size=12, color='#333333'),
-        plot_bgcolor='rgba(255,255,255,0)',
-        paper_bgcolor='rgba(255,255,255,0)',
+        font=dict(family="Arial, sans-serif", size=12),
+        plot_bgcolor='rgba(0,0,0,0)',  # Transparent background for better theme compatibility
+        paper_bgcolor='rgba(0,0,0,0)',  # Transparent paper for better theme compatibility
         height=600,
         margin=dict(l=20, r=20, t=50, b=20)
     )
@@ -443,7 +443,7 @@ def show_dashboard():
                             line_charts = base_chart.transform_filter(
                                 alt.FieldOneOfPredicate(field='Metric', oneOf=energy_metrics)
                             ).mark_line(point=True).encode(
-                                y=alt.Y("Value:Q", title="Energy (kWh)", scale=alt.Scale(zero=False)), # Changed zero to False for better viz if values are far from zero
+                                y=alt.Y("Value:Q", title="Energy (kWh)", scale=alt.Scale(zero=True)),  # Changed to zero=True
                                 color=alt.Color("Metric:N", legend=alt.Legend(orient='bottom'), 
                                                 scale=alt.Scale(domain=['Total_MQ', 'Total_BCQ'], range=['#FFC20A', '#1A85FF'])),
                                 tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
@@ -453,7 +453,7 @@ def show_dashboard():
                             bar_chart = base_chart.transform_filter(
                                 alt.datum.Metric == "Prices"
                             ).mark_bar(color="#40B0A6").encode(
-                                y=alt.Y("Value:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=False)), # Changed zero to False
+                                y=alt.Y("Value:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=True)),  # Changed to zero=True
                                 tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
                             )
                         
@@ -469,102 +469,27 @@ def show_dashboard():
                         st.altair_chart(comb_ch.properties(title=f"Metrics for {selected_date_str}").interactive(), use_container_width=True)
                     else: st.info("No MQ, BCQ or Price data for this chart.")
                 with chart_tabs[1]: # WESM chart (based on unscaled WESM)
-                    if "WESM" in melt_cols:
-                        wesm_d = data[["Time", "WESM"]].dropna(subset=["WESM"])
-                        if not wesm_d.empty:
-                            ch_wesm = alt.Chart(wesm_d).mark_bar().encode(
+                    if "WESM" in melt_cols and "Prices" in melt_cols:
+                        # Create a combined chart with WESM bars and Price line
+                        wesm_data = data[["Time", "WESM", "Prices"]].dropna(subset=["WESM"])
+                        
+                        if not wesm_data.empty:
+                            # Bar chart for WESM
+                            bar_wesm = alt.Chart(wesm_data).mark_bar().encode(
                                 x=alt.X("Time:T", title="Time", axis=alt.Axis(format="%H:%M")), 
-                                y=alt.Y("WESM:Q", title="WESM Balance (kWh)"),
+                                y=alt.Y("WESM:Q", title="WESM Balance (kWh)", scale=alt.Scale(zero=True)),
                                 color=alt.condition(alt.datum.WESM < 0, alt.value("#ff9900"), alt.value("#4c78a8")),
                                 tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), alt.Tooltip("WESM:Q", format=",.2f")]
-                            ).properties(title=f"WESM Hourly Balance for {selected_date_str} (based on unscaled data)", height=400).interactive()
-                            st.altair_chart(ch_wesm, use_container_width=True)
-                            wt = wesm_d["WESM"].sum(); 
-                            ws = f"Net Import ({abs(wt):,.2f} kWh)" if wt < 0 else (f"Net Export ({wt:,.2f} kWh)" if wt > 0 else "Balanced (0 kWh)")
-                            st.info(f"Daily WESM (unscaled): {ws}")
-                        else: st.info("No WESM data for chart.")
-                    else: st.info("WESM data column N/A or all NaN.")
-            else: st.warning(f"Plotting columns missing/null for {selected_date_str}.")
-        else: st.warning("Time column invalid for charts.")
-
-        # Sankey Chart Section
-        max_mq_interval_time_str_header = ""
-        can_gen_sankey = False
-        # These are unscaled values for the chosen interval, fetched from the main 'data' DataFrame
-        interval_mq_unscaled, interval_bcq_unscaled, interval_wesm_unscaled = 0.0, 0.0, 0.0
-
-        # Find the interval of maximum Total_MQ for the Sankey chart
-        if "Total_MQ" in data.columns and not data["Total_MQ"].isnull().all() and \
-           "Total_BCQ" in data.columns: # BCQ needed for context, even if it might be all NaN for the interval
-            
-            max_mq_val_for_day = data["Total_MQ"].max(skipna=True)
-
-            if pd.notna(max_mq_val_for_day):
-                sankey_interval_idx = data["Total_MQ"].idxmax(skipna=True)
-                sankey_interval_row = data.loc[sankey_interval_idx]
-
-                interval_mq_unscaled = sankey_interval_row["Total_MQ"]
-                if pd.isna(interval_mq_unscaled): interval_mq_unscaled = 0.0
-                
-                # Get BCQ for this specific interval. It might be NaN.
-                if "Total_BCQ" in sankey_interval_row and pd.notna(sankey_interval_row["Total_BCQ"]):
-                    interval_bcq_unscaled = sankey_interval_row["Total_BCQ"]
-                else: # If Total_BCQ is NaN for this specific interval in the main data
-                    interval_bcq_unscaled = 0.0 
-                    # st.warning(f"Total_BCQ is N/A for the Sankey interval ({sankey_interval_row['Time']:%H:%M}). WESM for Sankey will assume 0 unscaled BCQ for this interval if MQ is also 0.")
-                
-                interval_wesm_unscaled = interval_bcq_unscaled - interval_mq_unscaled
-
-                time_obj = sankey_interval_row["Time"]
-                if pd.notna(time_obj) and hasattr(time_obj, 'strftime'):
-                    max_mq_interval_time_str_header = time_obj.strftime("%H:%M")
-                    # Condition to generate Sankey: MQ >= 0 and (MQ > 0 or unscaled BCQ > 0 to allow for pure export if MQ is 0)
-                    if interval_mq_unscaled >= 0 and (interval_mq_unscaled > 0.001 or interval_bcq_unscaled > 0.001):
-                         can_gen_sankey = True
-                else: # Fallback for time string
-                    max_mq_interval_time_str_header = str(time_obj)
-                    can_gen_sankey = True # Attempt anyway
-        
-        if can_gen_sankey:
-            st.subheader(f"⚡ Energy Flow for Interval ({max_mq_interval_time_str_header} on {selected_date_str})")
-            # Pass the unscaled MQ and unscaled WESM for that interval
-            # create_sankey_chart will handle fetching scaled generator data and recalculating WESM for its internal logic
-            sankey_fig = create_sankey_chart(interval_mq_unscaled, interval_wesm_unscaled, selected_date_str, max_mq_interval_time_str_header)
-            if sankey_fig: st.plotly_chart(sankey_fig, use_container_width=True)
-        else:
-            st.subheader("⚡ Energy Flow Sankey Chart")
-            st.info("Sankey chart not generated. Conditions for the chosen interval not met (e.g., MQ and unscaled BCQ are zero or unavailable).")
-
-
-def show_about_page():
-    st.header("About This Dashboard")
-    st.write("""
-    ### Energy Trading Dashboard V1.5
-    This dashboard provides visualization and analysis of energy trading data.
-    - **Data Source**: Hourly measurements from a PostgreSQL database.
-    - **Metrics**: Metered Quantities (MQ), Bilateral Contract Quantities (BCQ), Prices.
-    - **WESM Balance**: Calculated as `Total_BCQ - Total_MQ` (using unscaled data for general charts).
-    
-    #### Sankey Diagram Specifics:
-    - **Interval**: Shows energy flow for the hourly interval with the highest `Total_MQ` on the selected day.
-    - **Generator Data**: Fetched from `BCQ_Hourly` table. Values for specific generators (FDC, GNPK, PSALM, SEC, TSI, MPI) are **multiplied by 100** for the Sankey display.
-    - **Load Data**: Fetched from `MQ_Hourly` table (unscaled).
-    - **WESM for Sankey**: Recalculated based on the **scaled** generator total and unscaled MQ for the interval.
-    - **Structure**: Simplified to show direct flows from sources (Scaled Generators, WESM Import) via a central "Max Demand" to sinks (Individual Loads, WESM Export).
-    
-    ### Features
-    - Interactive date selection.
-    - Summary metrics and data tables.
-    - Time-series charts for energy and prices.
-    - Detailed Sankey diagram for the peak MQ interval.
-    
-    ### WESM Interpretation (General Charts)
-    - `WESM = Total_BCQ - Total_MQ` (unscaled).
-    - Negative WESM: Net Import. Positive WESM: Net Export.
-    
-    For issues, contact the system administrator.
-    """)
-    st.markdown("---"); st.markdown(f"<p style='text-align: center;'>App Version 1.5 (Scaled Gen & Simplified Sankey) | Last Updated: {datetime.now(datetime.now().astimezone().tzinfo).strftime('%Y-%m-%d %H:%M:%S %Z')}</p>", unsafe_allow_html=True)
-
-
-if __name__ == "__main__": main()
+                            )
+                            
+                            # Line chart for Prices
+                            line_prices = alt.Chart(wesm_data).mark_line(color="#E53935", point=True).encode(
+                                x=alt.X("Time:T", title="Time"),
+                                y=alt.Y("Prices:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=True)),
+                                tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), alt.Tooltip("Prices:Q", format=",.2f")]
+                            )
+                            
+                            # Combine charts with dual y-axes
+                            combined_chart = alt.layer(bar_wesm, line_prices).resolve_scale(
+                                y='independent'
+                            ).
