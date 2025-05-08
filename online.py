@@ -23,7 +23,7 @@ def get_sqlalchemy_engine():
         url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
         engine = create_engine(url, pool_pre_ping=True, connect_args={"connect_timeout": 15})
         with engine.connect() as conn:
-            pass
+            pass # Test connection
         return engine
     except KeyError as e:
         st.error(f"Error loading database credentials: {e}. Make sure your .streamlit/secrets.toml file is correctly configured with [database] section and keys: user, password, host, db, port.")
@@ -75,8 +75,9 @@ def fetch_data(selected_date_str: str):
             try:
                 if not pd.api.types.is_string_dtype(df['Time']):
                     df['Time'] = df['Time'].astype(str)
+                # Ensure time parsing handles various formats gracefully, coercing errors
                 df['Time'] = pd.to_datetime(selected_date_str + ' ' + df['Time'].str.strip(), errors='coerce')
-                df.dropna(subset=['Time'], inplace=True)
+                df.dropna(subset=['Time'], inplace=True) # Drop rows where time could not be parsed
             except Exception as e:
                 st.warning(f"Warning converting time values: {e}. Some time data may be incorrect.")
 
@@ -99,10 +100,8 @@ GENERATOR_LONG_TO_SHORT_MAP = {
     "Malita_Power_Inc._SMCPC": 'MPI'
 }
 
-# Columns to be scaled by 100 (these are the keys from GENERATOR_LONG_TO_SHORT_MAP)
 GENERATOR_COLUMNS_TO_SCALE = list(GENERATOR_LONG_TO_SHORT_MAP.keys())
 
-# IMPORTANT: VERIFY and UPDATE the KEYS of this dictionary to your ACTUAL database column names from MQ_Hourly
 DESTINATION_LONG_TO_SHORT_MAP = {
     "14BGN_T1L1_KIDCOTE01_NET": 'M1/M6/M8',
     "14BGN_T1L1_KIDCOTE02_NET": 'M2',
@@ -117,7 +116,6 @@ DESTINATION_LONG_TO_SHORT_MAP = {
 
 @st.cache_data(ttl=600)
 def fetch_sankey_generator_contributions(selected_date_str: str, interval_time_db_format: str):
-    """Fetches and scales generator contributions from BCQ_Hourly."""
     contributions = {short_name: 0.0 for short_name in GENERATOR_LONG_TO_SHORT_MAP.values()}
     if not GENERATOR_LONG_TO_SHORT_MAP:
         st.warning("Generator mapping is empty. Cannot fetch contributions.")
@@ -141,8 +139,8 @@ def fetch_sankey_generator_contributions(selected_date_str: str, interval_time_d
                 if long_name in row:
                     value = pd.to_numeric(row[long_name], errors='coerce')
                     if pd.notna(value):
-                        if long_name in GENERATOR_COLUMNS_TO_SCALE: # Apply scaling
-                            value *= 1000
+                        if long_name in GENERATOR_COLUMNS_TO_SCALE:
+                            value *= 1000 # Apply scaling
                         contributions[short_name] = value if value > 0 else 0.0
                     else:
                         contributions[short_name] = 0.0
@@ -153,8 +151,6 @@ def fetch_sankey_generator_contributions(selected_date_str: str, interval_time_d
 
 @st.cache_data(ttl=600)
 def fetch_sankey_destination_consumption(selected_date_str: str, interval_time_db_format: str):
-    """Fetches actual destination consumption from MQ_Hourly."""
-    # This function remains unchanged as destination consumptions are not scaled by 100.
     consumption = {short_name: 0.0 for short_name in DESTINATION_LONG_TO_SHORT_MAP.values()}
     if not DESTINATION_LONG_TO_SHORT_MAP:
         st.warning("Destination mapping is empty. Cannot fetch consumption.")
@@ -184,55 +180,34 @@ def fetch_sankey_destination_consumption(selected_date_str: str, interval_time_d
         return consumption
 
 def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: float, selected_date_str: str, interval_time_hh_mm_str: str):
-    """
-    Creates a professional Sankey diagram showing energy flow for a specific interval.
-    Uses a colorblind-friendly palette and clear, concise labeling.
-    
-    Args:
-        interval_mq_val: Total MQ for the interval (unscaled)
-        interval_wesm_val_unscaled: (Total_BCQ_unscaled - Total_MQ_unscaled) for the interval
-        selected_date_str: Date in string format (YYYY-MM-DD)
-        interval_time_hh_mm_str: Time interval in HH:MM format
-        
-    Returns:
-        Plotly Figure object or None if insufficient data
-    """
     if pd.isna(interval_mq_val) or interval_mq_val < 0:
         st.info(f"Invalid interval data ({interval_time_hh_mm_str}, {selected_date_str}): MQ = {interval_mq_val:,.0f} kWh")
         return None
 
-    interval_time_db_format = interval_time_hh_mm_str + ":00"  # Assumes DB Time is HH:MM:SS string
+    interval_time_db_format = interval_time_hh_mm_str + ":00"
 
-    # Fetch generator contributions (scaled by 100x inside the function)
     scaled_generator_contributions = fetch_sankey_generator_contributions(selected_date_str, interval_time_db_format)
-    # Fetch destination consumptions (unscaled)
     destination_consumptions = fetch_sankey_destination_consumption(selected_date_str, interval_time_db_format)
 
     sum_scaled_generator_contributions = sum(v for v in scaled_generator_contributions.values() if pd.notna(v))
-    actual_total_mq_for_interval = interval_mq_val  # Unscaled MQ
+    actual_total_mq_for_interval = interval_mq_val
 
-    # Recalculate WESM balance based on scaled generation and unscaled MQ
     wesm_value_for_sankey = sum_scaled_generator_contributions - actual_total_mq_for_interval
 
-    # Require significant data to generate Sankey
     if sum_scaled_generator_contributions < 0.01 and actual_total_mq_for_interval < 0.01:
         st.info(f"Insufficient flow data for {interval_time_hh_mm_str} on {selected_date_str}")
         return None
 
-    # Initialize Sankey diagram structures
     sankey_node_labels, node_indices = [], {}
     sankey_sources_indices, sankey_targets_indices, sankey_values = [], [], []
     
-    # Define a colorblind-friendly palette that works in both light and dark modes
-    # Using higher contrast colors with better accessibility
     COLOR_PALETTE = {
-        "junction": "#FFC107",         # Amber - visible in both modes
-        "generator": "#3F51B5",        # Indigo - good contrast in both modes
-        "wesm_import": "#4CAF50",      # Green - visible in both modes
-        "load": "#F44336",             # Red - high visibility
-        "wesm_export": "#9C27B0"       # Purple - distinctive in both modes
+        "junction": "#E69F00",
+        "generator": "#0072B2",
+        "wesm_import": "#009E73",
+        "load": "#D55E00",
+        "wesm_export": "#CC79A7"
     }
-    
     node_colors = []
     
     def add_node(label, color):
@@ -242,18 +217,15 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
             node_colors.append(color)
         return node_indices[label]
 
-    # Central Junction Node
     total_flow_through_junction = sum_scaled_generator_contributions
-    if wesm_value_for_sankey < 0:  # WESM Import
+    if wesm_value_for_sankey < 0:
         total_flow_through_junction += abs(wesm_value_for_sankey)
     
     junction_node_label = f"Max Demand ({total_flow_through_junction:,.0f} kWh)"
     junction_node_idx = add_node(junction_node_label, COLOR_PALETTE["junction"])
 
-    # --- Links TO Junction Node ---
-    # 1. Generator Contributions
     for short_name, value in scaled_generator_contributions.items():
-        if value > 0.01:  # Only show significant contributions
+        if value > 0.01:
             percentage = (value / sum_scaled_generator_contributions * 100) if sum_scaled_generator_contributions > 0 else 0
             gen_node_label = f"{short_name} ({value:,.0f} kWh, {percentage:.1f}%)"
             gen_node_idx = add_node(gen_node_label, COLOR_PALETTE["generator"])
@@ -261,7 +233,6 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
             sankey_targets_indices.append(junction_node_idx)
             sankey_values.append(value)
 
-    # 2. WESM Import
     if wesm_value_for_sankey < 0:
         import_value = abs(wesm_value_for_sankey)
         if import_value > 0.01:
@@ -272,10 +243,7 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
             sankey_targets_indices.append(junction_node_idx)
             sankey_values.append(import_value)
 
-    # --- Links FROM Junction Node ---
-    # Individual Local Loads
     sum_destination_consumptions = sum(v for v in destination_consumptions.values() if pd.notna(v) and v > 0.01)
-
     if sum_destination_consumptions > 0.01:
         for short_name, value in destination_consumptions.items():
             if value > 0.01:
@@ -286,7 +254,6 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
                 sankey_targets_indices.append(dest_node_idx)
                 sankey_values.append(value)
     
-    # WESM Export
     if wesm_value_for_sankey > 0:
         export_value = wesm_value_for_sankey
         if export_value > 0.01:
@@ -301,13 +268,12 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
         st.info(f"Insufficient energy flow for {interval_time_hh_mm_str} on {selected_date_str}")
         return None
     
-    # Create the Sankey diagram with professional styling
     fig = go.Figure(data=[go.Sankey(
-        arrangement="snap",  # More professional layout
+        arrangement="snap",
         node=dict(
             pad=20,  
             thickness=15,
-            line=dict(color="#888888", width=0.5),  # More neutral border color
+            line=dict(color="#A9A9A9", width=0.5),
             label=sankey_node_labels,
             color=node_colors
         ),
@@ -319,33 +285,29 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
         )
     )])
     
-    # Professional layout with clear title and proper spacing
     fig.update_layout(
         title=dict(
             text=f"Energy Flow: {interval_time_hh_mm_str}, {selected_date_str}",
-            font=dict(size=16)  # Removed fixed color for better dark/light mode compatibility
+            font=dict(size=16)
         ),
         font=dict(family="Arial, sans-serif", size=12),
-        plot_bgcolor='rgba(0,0,0,0)',  # Transparent background for better theme compatibility
-        paper_bgcolor='rgba(0,0,0,0)',  # Transparent paper for better theme compatibility
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
         height=600,
         margin=dict(l=20, r=20, t=50, b=20)
     )
-    
     return fig
 
-# --- STREAMLIT UI (main, show_dashboard, show_about_page functions) ---
-# These functions largely remain the same. The key is that show_dashboard()
-# passes the unscaled interval_mq_val and unscaled interval_wesm_val to create_sankey_chart.
-# create_sankey_chart then handles scaling and recalculation for Sankey logic.
-
-def main():
+def app_content():
     st.title("📊 Daily Energy Trading Dashboard")
     st.sidebar.header("Navigation")
     page_options = ["Dashboard", "About"]
     if 'current_page' not in st.session_state: st.session_state.current_page = "Dashboard"
-    page = st.sidebar.radio("Go to", page_options, index=page_options.index(st.session_state.current_page), key="nav_radio")
+    
+    page_key = "nav_radio_authed" 
+    page = st.sidebar.radio("Go to", page_options, index=page_options.index(st.session_state.current_page), key=page_key)
     st.session_state.current_page = page
+    
     if page == "About": show_about_page()
     else: show_dashboard()
 
@@ -374,7 +336,7 @@ def show_dashboard():
         if all(c in data.columns for c in ["Total_BCQ", "Total_MQ"]) and \
            pd.api.types.is_numeric_dtype(data["Total_BCQ"]) and \
            pd.api.types.is_numeric_dtype(data["Total_MQ"]):
-            data['WESM'] = data['Total_BCQ'] - data['Total_MQ'] # Unscaled WESM for general display
+            data['WESM'] = data['Total_BCQ'] - data['Total_MQ']
         else:
             data['WESM'] = pd.NA
             st.warning("Could not calculate WESM as Total_BCQ or Total_MQ is missing or not numeric.")
@@ -392,8 +354,6 @@ def show_dashboard():
         if "Total_MQ" in data.columns and pd.api.types.is_numeric_dtype(data["Total_MQ"]) and not data["Total_MQ"].isnull().all():
             max_mq_val_for_day = data["Total_MQ"].max(skipna=True)
             if pd.notna(max_mq_val_for_day):
-                # For Sankey, we use the interval of max MQ.
-                # For display here, it's just the max MQ value of the day.
                 max_mq_idx_for_day_display = data["Total_MQ"].idxmax(skipna=True)
                 t_obj_display = data.loc[max_mq_idx_for_day_display, "Time"]
                 t_str_display = t_obj_display.strftime("%H:%M") if pd.notna(t_obj_display) and hasattr(t_obj_display, 'strftime') else "N/A"
@@ -412,7 +372,7 @@ def show_dashboard():
             st.dataframe(df_display.style.format(precision=2, na_rep="N/A"),height=300, use_container_width=True)
         with tbl_tabs[1]:
             s_dict = {}
-            for c in ["Total_MQ", "Total_BCQ", "WESM"]: # These are based on unscaled data from fetch_data
+            for c in ["Total_MQ", "Total_BCQ", "WESM"]:
                 if c in data and pd.api.types.is_numeric_dtype(data[c]):
                     s_dict[f"{c} (kWh)"] = data[c].sum(skipna=True)
                 else:
@@ -430,66 +390,193 @@ def show_dashboard():
 
             if melt_cols:
                 chart_tabs = st.tabs(["Energy & Prices", "WESM Balance"])
-                with chart_tabs[0]:
+                with chart_tabs[0]: 
                     ep_c = [c for c in ["Total_MQ", "Total_BCQ", "Prices"] if c in melt_cols]
                     if ep_c:
                         melt_ep = data.melt(id_vars=["Time"], value_vars=ep_c, var_name="Metric", value_name="Value").dropna(subset=['Value'])
                         base_chart = alt.Chart(melt_ep).encode(x=alt.X("Time:T", title="Time", axis=alt.Axis(format="%H:%M")))
-                        line_charts = alt.Chart(pd.DataFrame()) 
-                        bar_chart = alt.Chart(pd.DataFrame())  
+                        
+                        line_charts_energy = alt.Chart(pd.DataFrame()) 
+                        bar_chart_prices = alt.Chart(pd.DataFrame())  
 
                         energy_metrics = [m for m in ["Total_MQ", "Total_BCQ"] if m in ep_c]
                         if energy_metrics:
-                            line_charts = base_chart.transform_filter(
+                            line_charts_energy = base_chart.transform_filter(
                                 alt.FieldOneOfPredicate(field='Metric', oneOf=energy_metrics)
                             ).mark_line(point=True).encode(
-                                y=alt.Y("Value:Q", title="Energy (kWh)", scale=alt.Scale(zero=True)),  # Changed to zero=True
+                                y=alt.Y("Value:Q", title="Energy (kWh)", scale=alt.Scale(zero=True)), 
                                 color=alt.Color("Metric:N", legend=alt.Legend(orient='bottom'), 
                                                 scale=alt.Scale(domain=['Total_MQ', 'Total_BCQ'], range=['#FFC20A', '#1A85FF'])),
                                 tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
                             )
 
                         if "Prices" in ep_c:
-                            bar_chart = base_chart.transform_filter(
+                            bar_chart_prices = base_chart.transform_filter(
                                 alt.datum.Metric == "Prices"
                             ).mark_bar(color="#40B0A6").encode(
-                                y=alt.Y("Value:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=True)),  # Changed to zero=True
+                                y=alt.Y("Value:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=True)), 
                                 tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
                             )
                         
                         if energy_metrics and "Prices" in ep_c:
-                            comb_ch = alt.layer(bar_chart, line_charts).resolve_scale(y='independent')
+                            comb_ch = alt.layer(bar_chart_prices, line_charts_energy).resolve_scale(y='independent')
                         elif energy_metrics:
-                            comb_ch = line_charts
+                            comb_ch = line_charts_energy
                         elif "Prices" in ep_c:
-                            comb_ch = bar_chart
+                            comb_ch = bar_chart_prices
                         else:
                             comb_ch = alt.Chart(pd.DataFrame()).mark_text(text="No Energy/Price Data for chart.").encode()
                         
                         st.altair_chart(comb_ch.properties(title=f"Metrics for {selected_date_str}").interactive(), use_container_width=True)
                     else: st.info("No MQ, BCQ or Price data for this chart.")
-                with chart_tabs[1]: # WESM chart (based on unscaled WESM)
-                    if "WESM" in melt_cols and "Prices" in melt_cols:
-                        # Create a combined chart with WESM bars and Price line
-                        wesm_data = data[["Time", "WESM", "Prices"]].dropna(subset=["WESM"])
-                        
-                        if not wesm_data.empty:
-                            # Bar chart for WESM
-                            bar_wesm = alt.Chart(wesm_data).mark_bar().encode(
+
+                with chart_tabs[1]: 
+                    wesm_available = "WESM" in melt_cols
+                    prices_available = "Prices" in melt_cols
+                    charts_to_layer = []
+
+                    if wesm_available:
+                        wesm_d = data[["Time", "WESM"]].dropna(subset=["WESM"])
+                        if not wesm_d.empty:
+                            ch_wesm = alt.Chart(wesm_d).mark_bar().encode(
                                 x=alt.X("Time:T", title="Time", axis=alt.Axis(format="%H:%M")), 
-                                y=alt.Y("WESM:Q", title="WESM Balance (kWh)", scale=alt.Scale(zero=True)),
-                                color=alt.condition(alt.datum.WESM < 0, alt.value("#ff9900"), alt.value("#4c78a8")),
+                                y=alt.Y("WESM:Q", title="WESM Balance (kWh)", scale=alt.Scale(zero=True)), 
+                                color=alt.condition(alt.datum.WESM < 0, alt.value("#ff9900"), alt.value("#4c78a8")), 
                                 tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), alt.Tooltip("WESM:Q", format=",.2f")]
                             )
-                            
-                            # Line chart for Prices
-                            line_prices = alt.Chart(wesm_data).mark_line(color="#E53935", point=True).encode(
-                                x=alt.X("Time:T", title="Time"),
-                                y=alt.Y("Prices:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=True)),
+                            charts_to_layer.append(ch_wesm)
+                            wt = wesm_d["WESM"].sum(); 
+                            ws = f"Net Import ({abs(wt):,.2f} kWh)" if wt < 0 else (f"Net Export ({wt:,.2f} kWh)" if wt > 0 else "Balanced (0 kWh)")
+                            st.info(f"Daily WESM (unscaled): {ws}")
+                        else: st.info("No WESM data for WESM chart.")
+                    
+                    if prices_available:
+                        prices_d = data[["Time", "Prices"]].dropna(subset=["Prices"])
+                        if not prices_d.empty:
+                            ch_prices_line = alt.Chart(prices_d).mark_line(point=True, color="#E45756").encode( 
+                                x=alt.X("Time:T", title="Time", axis=alt.Axis(format="%H:%M")),
+                                y=alt.Y("Prices:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=True)), 
                                 tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), alt.Tooltip("Prices:Q", format=",.2f")]
                             )
-                            
-                            # Combine charts with dual y-axes
-                            combined_chart = alt.layer(bar_wesm, line_prices).resolve_scale(
-                                y='independent'
-                            ).
+                            charts_to_layer.append(ch_prices_line)
+                        else: st.info("No Price data for Price line chart.")
+
+                    if len(charts_to_layer) == 2:
+                        combined_wesm_price_chart = alt.layer(*charts_to_layer).resolve_scale(y='independent')
+                        st.altair_chart(combined_wesm_price_chart.properties(title=f"WESM Balance & Prices for {selected_date_str}", height=400).interactive(), use_container_width=True)
+                    elif len(charts_to_layer) == 1:
+                        title_text = "WESM Hourly Balance" if wesm_available and not prices_available else "Hourly Prices"
+                        st.altair_chart(charts_to_layer[0].properties(title=f"{title_text} for {selected_date_str}", height=400).interactive(), use_container_width=True)
+                    else:
+                        st.info("No WESM or Price data available for this tab.")
+            else: st.warning(f"Plotting columns missing/null for {selected_date_str}.")
+        else: st.warning("Time column invalid for charts.")
+
+        max_mq_interval_time_str_header = ""
+        can_gen_sankey = False
+        interval_mq_unscaled, interval_bcq_unscaled, interval_wesm_unscaled = 0.0, 0.0, 0.0
+
+        if "Total_MQ" in data.columns and not data["Total_MQ"].isnull().all() and \
+           "Total_BCQ" in data.columns: 
+            max_mq_val_for_day = data["Total_MQ"].max(skipna=True)
+            if pd.notna(max_mq_val_for_day):
+                sankey_interval_idx = data["Total_MQ"].idxmax(skipna=True)
+                sankey_interval_row = data.loc[sankey_interval_idx]
+                interval_mq_unscaled = sankey_interval_row["Total_MQ"]
+                if pd.isna(interval_mq_unscaled): interval_mq_unscaled = 0.0
+                
+                if "Total_BCQ" in sankey_interval_row and pd.notna(sankey_interval_row["Total_BCQ"]):
+                    interval_bcq_unscaled = sankey_interval_row["Total_BCQ"]
+                else:
+                    interval_bcq_unscaled = 0.0 
+                
+                interval_wesm_unscaled = interval_bcq_unscaled - interval_mq_unscaled
+                time_obj = sankey_interval_row["Time"]
+
+                if pd.notna(time_obj) and hasattr(time_obj, 'strftime'):
+                    max_mq_interval_time_str_header = time_obj.strftime("%H:%M")
+                    if interval_mq_unscaled >= 0 and (interval_mq_unscaled > 0.001 or interval_bcq_unscaled > 0.001):
+                         can_gen_sankey = True
+                else: 
+                    max_mq_interval_time_str_header = str(time_obj) if pd.notna(time_obj) else "N/A"
+                    if interval_mq_unscaled >= 0 and (interval_mq_unscaled > 0.001 or interval_bcq_unscaled > 0.001):
+                         can_gen_sankey = True 
+        
+        if can_gen_sankey:
+            st.subheader(f"⚡ Energy Flow for Interval ({max_mq_interval_time_str_header} on {selected_date_str})")
+            sankey_fig = create_sankey_chart(interval_mq_unscaled, interval_wesm_unscaled, selected_date_str, max_mq_interval_time_str_header)
+            if sankey_fig: st.plotly_chart(sankey_fig, use_container_width=True)
+        else:
+            st.subheader("⚡ Energy Flow Sankey Chart")
+            st.info("Sankey chart not generated. Conditions for the chosen interval not met (e.g., Max MQ is zero, negative, or essential data for the interval is unavailable).")
+
+def show_about_page():
+    st.header("About This Dashboard")
+    st.write("""
+    ### Energy Trading Dashboard V1.7
+    This dashboard provides visualization and analysis of energy trading data.
+    - **Data Source**: Hourly measurements from a PostgreSQL database.
+    - **Metrics**: Metered Quantities (MQ), Bilateral Contract Quantities (BCQ), Prices.
+    - **WESM Balance**: Calculated as `Total_BCQ - Total_MQ` (using unscaled data for general charts).
+    
+    #### Sankey Diagram Specifics:
+    - **Interval**: Shows energy flow for the hourly interval with the highest `Total_MQ` on the selected day.
+    - **Generator Data**: Fetched from `BCQ_Hourly` table. Values for specific generators (FDC, GNPK, PSALM, SEC, TSI, MPI) are **multiplied by 1000** for the Sankey display.
+    - **Load Data**: Fetched from `MQ_Hourly` table (unscaled).
+    - **WESM for Sankey**: Recalculated based on the **scaled** generator total and unscaled MQ for the interval.
+    - **Structure**: Simplified to show direct flows from sources (Scaled Generators, WESM Import) via a central "Max Demand" to sinks (Individual Loads, WESM Export).
+    
+    ### Features
+    - Secure passcode access (passcode configured in `secrets.toml`).
+    - Interactive date selection.
+    - Summary metrics and data tables.
+    - Time-series charts for energy and prices (y-axes start at zero).
+    - WESM balance chart now includes an overlay for prices.
+    - Detailed Sankey diagram for the peak MQ interval with adjusted colors.
+    
+    ### WESM Interpretation (General Charts)
+    - `WESM = Total_BCQ - Total_MQ` (unscaled).
+    - Negative WESM: Net Import. Positive WESM: Net Export.
+    
+    For issues, contact the system administrator.
+    """)
+    st.markdown("---"); st.markdown(f"<p style='text-align: center;'>App Version 1.7 (Passcode from Secrets) | Last Updated: {datetime.now(datetime.now().astimezone().tzinfo).strftime('%Y-%m-%d %H:%M:%S %Z')}</p>", unsafe_allow_html=True)
+
+def main():
+    """Main function to handle passcode and app display."""
+    try:
+        # Attempt to retrieve the passcode from secrets.toml
+        # Assumes you have a section [app_settings] with a key "passcode"
+        CORRECT_PASSCODE = st.secrets["app_settings"]["passcode"]
+    except KeyError:
+        st.error("Passcode not found in secrets.toml. Please ensure `[app_settings]` section with `passcode` key is configured.")
+        st.stop() # Stop the app if passcode is not configured
+    except Exception as e: # Catch any other potential errors loading secrets
+        st.error(f"Error loading passcode from secrets: {e}")
+        st.stop()
+
+
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+
+    if not st.session_state.authenticated:
+        st.title("🔒 Secure Access")
+        password_placeholder = st.empty()
+        # Use a unique key for the text_input to avoid conflicts if this part reruns
+        password_attempt = password_placeholder.text_input("Enter Passcode:", type="password", key="passcode_input_main")
+
+        if password_attempt: # Only check if something was entered
+            if password_attempt == CORRECT_PASSCODE:
+                st.session_state.authenticated = True
+                password_placeholder.empty() 
+                st.experimental_rerun() 
+            else:
+                st.error("Incorrect passcode. Please try again.")
+        # Optional: Add a button to explicitly submit passcode if desired,
+        # but text_input triggers a rerun on change by default when not empty.
+    
+    if st.session_state.authenticated:
+        app_content()
+
+if __name__ == "__main__":
+    main()
