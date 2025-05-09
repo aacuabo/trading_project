@@ -5,3 +5,4 @@ psycopg2-binary
 matplotlib
 altair
 plotly
+streamlit>=1.27.0
