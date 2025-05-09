@@ -569,7 +569,7 @@ def main():
             if password_attempt == CORRECT_PASSCODE:
                 st.session_state.authenticated = True
                 password_placeholder.empty() 
-                st.experimental_rerun() 
+                st.rerun() 
             else:
                 st.error("Incorrect passcode. Please try again.")
         # Optional: Add a button to explicitly submit passcode if desired,
