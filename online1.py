@@ -186,7 +186,7 @@ def fetch_sankey_generator_contributions_averaged(start_date_str: str, end_date_
 
         for long_name, short_name in GENERATOR_LONG_TO_SHORT_MAP.items():
             if long_name in filtered_df.columns:
-                avg_value = pd.to_numeric(filtered_df[long_name], errors='coerce').mean()
+                avg_value = pd.to_numeric(filtered_df[long_name], errors='coerce').mean() # Series.mean() handles skipna by default
                 if pd.notna(avg_value):
                     if long_name in GENERATOR_COLUMNS_TO_SCALE: # Check if this specific generator needs scaling
                         avg_value *= 1000 # Scale factor (e.g., MWh to kWh)
@@ -227,7 +227,7 @@ def fetch_sankey_destination_consumption_averaged(start_date_str: str, end_date_
 
         for long_name, short_name in DESTINATION_LONG_TO_SHORT_MAP.items():
             if long_name in filtered_df.columns:
-                avg_value = pd.to_numeric(filtered_df[long_name], errors='coerce').mean()
+                avg_value = pd.to_numeric(filtered_df[long_name], errors='coerce').mean() # Series.mean() handles skipna by default
                 if pd.notna(avg_value):
                     consumption[short_name] = float(avg_value) if avg_value > 0 else 0.0
         return consumption
@@ -484,9 +484,11 @@ def show_dashboard():
 
         # Calculate and display KPIs for Prices
         if COL_PRICES in data_for_averaging.columns and pd.api.types.is_numeric_dtype(data_for_averaging[COL_PRICES]):
-            avg_daily_max_price = float(daily_grouped[COL_PRICES].max(skipna=True).mean(skipna=True) or 0)
-            avg_daily_avg_price = float(daily_grouped[COL_PRICES].mean(skipna=True).mean(skipna=True) or 0)
-            avg_daily_min_price = float(daily_grouped[COL_PRICES].min(skipna=True).mean(skipna=True) or 0)
+            # For GroupBy objects, skipna is usually True by default for aggregations.
+            # The subsequent .mean(skipna=True) is on a Series, where skipna is a valid argument.
+            avg_daily_max_price = float(daily_grouped[COL_PRICES].max().mean(skipna=True) or 0)
+            avg_daily_avg_price = float(daily_grouped[COL_PRICES].mean().mean(skipna=True) or 0)
+            avg_daily_min_price = float(daily_grouped[COL_PRICES].min().mean(skipna=True) or 0)
             
             col1.metric("Avg Daily Max Price", f"{avg_daily_max_price:,.2f} PHP/kWh" if pd.notna(avg_daily_max_price) and avg_daily_max_price != 0 else "N/A")
             col2.metric("Avg Daily Avg Price", f"{avg_daily_avg_price:,.2f} PHP/kWh" if pd.notna(avg_daily_avg_price) and avg_daily_avg_price != 0 else "N/A")
@@ -496,7 +498,7 @@ def show_dashboard():
 
         # Calculate and display KPI for Total MQ
         if COL_TOTAL_MQ in data_for_averaging.columns and pd.api.types.is_numeric_dtype(data_for_averaging[COL_TOTAL_MQ]):
-            avg_of_daily_max_mq = float(daily_grouped[COL_TOTAL_MQ].max(skipna=True).mean(skipna=True) or 0)
+            avg_of_daily_max_mq = float(daily_grouped[COL_TOTAL_MQ].max().mean(skipna=True) or 0)
             col4.metric("Avg Daily Max Total MQ", f"{avg_of_daily_max_mq:,.0f} kWh" if pd.notna(avg_of_daily_max_mq) and avg_of_daily_max_mq != 0 else "N/A", help="Average of the maximum Total MQ recorded each selected day.")
         else:
             col4.metric("Avg Daily Max MQ", "N/A", "MQ N/A")
@@ -513,9 +515,10 @@ def show_dashboard():
                         lambda x: x.strftime('%H:%M') if pd.notna(x) and isinstance(x, time) else 'N/A'
                     )
                     # Group by the string representation of the hour
+                    # For GroupBy.mean(), skipna=True is default.
                     hourly_avg_table_data = data_for_averaging.groupby(COL_HOUR_STR)[
                         [COL_TOTAL_MQ, COL_TOTAL_BCQ, COL_PRICES, COL_WESM]
-                    ].mean(skipna=True).reset_index() # Use skipna=True for mean calculation
+                    ].mean().reset_index() 
                     
                     # Sort by hour properly if 'N/A' is not the only value
                     if 'N/A' in hourly_avg_table_data[COL_HOUR_STR].values:
@@ -553,8 +556,9 @@ def show_dashboard():
             for c in [COL_TOTAL_MQ, COL_TOTAL_BCQ, COL_WESM]:
                 if c in data_for_averaging.columns and pd.api.types.is_numeric_dtype(data_for_averaging[c]):
                     try:
-                        # Sum each day's values, then average these daily sums
-                        avg_daily_sum = float(daily_grouped[c].sum(skipna=True).mean(skipna=True) or 0)
+                        # Sum each day's values (GroupBy.sum() default skipna=True), 
+                        # then average these daily sums (Series.mean(skipna=True))
+                        avg_daily_sum = float(daily_grouped[c].sum().mean(skipna=True) or 0)
                         s_dict[f"Avg Daily Sum {c.replace('_', ' ')} (kWh)"] = f"{avg_daily_sum:,.0f}" if pd.notna(avg_daily_sum) and avg_daily_sum != 0 else "N/A"
                     except Exception as e:
                         st.warning(f"Error calculating average daily sum for {c}: {e}")
@@ -565,8 +569,8 @@ def show_dashboard():
             # Calculate overall average price
             if COL_PRICES in data_for_averaging.columns and pd.api.types.is_numeric_dtype(data_for_averaging[COL_PRICES]):
                 try:
-                    # Average of daily average prices
-                    avg_overall_price = float(daily_grouped[COL_PRICES].mean(skipna=True).mean(skipna=True) or 0)
+                    # Average of daily average prices (GroupBy.mean() default skipna=True, then Series.mean(skipna=True))
+                    avg_overall_price = float(daily_grouped[COL_PRICES].mean().mean(skipna=True) or 0)
                     s_dict["Overall Avg Price (PHP/kWh)"] = f"{avg_overall_price:,.2f}" if pd.notna(avg_overall_price) and avg_overall_price != 0 else "N/A"
                 except Exception as e:
                     st.warning(f"Error calculating overall average price: {e}")
@@ -574,11 +578,9 @@ def show_dashboard():
             else:
                 s_dict["Overall Avg Price (PHP/kWh)"] = "N/A (Data Missing)"
 
-            # --- FIX APPLIED HERE: Displaying s_dict contents ---
+            # Displaying s_dict contents
             if s_dict:
-                # Create columns for a cleaner layout of metrics
                 num_metrics = len(s_dict)
-                # Use a flexible number of columns, e.g., up to 3 or 4 per row
                 cols_per_row = min(num_metrics, 3) 
                 summary_cols = st.columns(cols_per_row)
                 
@@ -589,7 +591,6 @@ def show_dashboard():
                     col_idx +=1
             else:
                 st.info("No summary data to display for the selected criteria.")
-            # --- End of fix ---
 
         # --- Charts ---
         st.subheader("Average Hourly Metrics Visualization")
@@ -597,12 +598,11 @@ def show_dashboard():
         
         try:
             if COL_HOUR in data_for_averaging.columns and not data_for_averaging[COL_HOUR].isnull().all():
-                # Ensure COL_HOUR_STR is available from table processing or recalculate
                 if COL_HOUR_STR not in data_for_averaging.columns:
                      data_for_averaging[COL_HOUR_STR] = data_for_averaging[COL_HOUR].apply(
                         lambda x: x.strftime('%H:%M') if pd.notna(x) and isinstance(x, time) else 'Unknown'
                     )
-
+                # GroupBy.agg with 'mean' will handle skipna by default
                 hourly_avg_df_for_charts = data_for_averaging.groupby(COL_HOUR_STR).agg({
                     COL_TOTAL_MQ: 'mean', 
                     COL_TOTAL_BCQ: 'mean',
@@ -610,7 +610,6 @@ def show_dashboard():
                     COL_PRICES: 'mean'
                 }).reset_index()
                 
-                # Sort by hour properly, handling 'Unknown' or 'N/A' if they exist
                 if 'Unknown' in hourly_avg_df_for_charts[COL_HOUR_STR].values:
                     known_hours_df = hourly_avg_df_for_charts[hourly_avg_df_for_charts[COL_HOUR_STR] != 'Unknown'].copy()
                     if not known_hours_df.empty:
@@ -618,18 +617,17 @@ def show_dashboard():
                         known_hours_df = known_hours_df.sort_values('Hour_Sort_Key').drop(columns=['Hour_Sort_Key'])
                     unknown_hours_df = hourly_avg_df_for_charts[hourly_avg_df_for_charts[COL_HOUR_STR] == 'Unknown']
                     hourly_avg_df_for_charts = pd.concat([known_hours_df, unknown_hours_df], ignore_index=True)
-                elif 'N/A' in hourly_avg_df_for_charts[COL_HOUR_STR].values: # From table processing
+                elif 'N/A' in hourly_avg_df_for_charts[COL_HOUR_STR].values: 
                     known_hours_df = hourly_avg_df_for_charts[hourly_avg_df_for_charts[COL_HOUR_STR] != 'N/A'].copy()
                     if not known_hours_df.empty:
                         known_hours_df['Hour_Sort_Key'] = pd.to_datetime(known_hours_df[COL_HOUR_STR], format='%H:%M', errors='coerce').dt.time
                         known_hours_df = known_hours_df.sort_values('Hour_Sort_Key').drop(columns=['Hour_Sort_Key'])
                     na_hours_df = hourly_avg_df_for_charts[hourly_avg_df_for_charts[COL_HOUR_STR] == 'N/A']
                     hourly_avg_df_for_charts = pd.concat([known_hours_df, na_hours_df], ignore_index=True)   
-                else: # All are valid times
+                else: 
                     hourly_avg_df_for_charts['Hour_Sort_Key'] = pd.to_datetime(hourly_avg_df_for_charts[COL_HOUR_STR], format='%H:%M', errors='coerce').dt.time
                     hourly_avg_df_for_charts = hourly_avg_df_for_charts.sort_values('Hour_Sort_Key').drop(columns=['Hour_Sort_Key'])
                 
-                # Tab 1: MQ & BCQ Chart
                 with chart_tabs[0]:
                     if all(c in hourly_avg_df_for_charts.columns for c in [COL_HOUR_STR, COL_TOTAL_MQ, COL_TOTAL_BCQ]):
                         mq_bcq_data_melted = pd.melt(
@@ -641,19 +639,18 @@ def show_dashboard():
                         )
                         
                         mq_bcq_chart = alt.Chart(mq_bcq_data_melted).mark_line(point=True).encode(
-                            x=alt.X(f'{COL_HOUR_STR}:N', title='Hour of Day (Average)', sort=None), # Use nominal type, sorting handled by DataFrame
+                            x=alt.X(f'{COL_HOUR_STR}:N', title='Hour of Day (Average)', sort=None), 
                             y=alt.Y('Value (kWh):Q', title='Average Energy (kWh)', scale=alt.Scale(zero=False)),
                             color=alt.Color('Metric:N', legend=alt.Legend(title='Metric Type')),
                             tooltip=[COL_HOUR_STR, 'Metric', alt.Tooltip('Value (kWh):Q', format=',.0f')]
                         ).properties(
                             title=f'Average Hourly MQ & BCQ ({", ".join(st.session_state.selected_days_of_week)})',
                             height=400
-                        ).configure_axis(labelAngle=-45) # Angled labels for better readability
+                        ).configure_axis(labelAngle=-45) 
                         st.altair_chart(mq_bcq_chart, use_container_width=True)
                     else:
                         st.warning("Missing required data columns (Hour, MQ, or BCQ) for the MQ & BCQ chart.")
                 
-                # Tab 2: WESM Chart
                 with chart_tabs[1]:
                     if COL_WESM in hourly_avg_df_for_charts.columns and not hourly_avg_df_for_charts[COL_WESM].isnull().all():
                         wesm_chart = alt.Chart(hourly_avg_df_for_charts).mark_bar().encode(
@@ -661,8 +658,8 @@ def show_dashboard():
                             y=alt.Y(f'{COL_WESM}:Q', title='Average WESM (kWh)'),
                             color=alt.condition(
                                 alt.datum[COL_WESM] > 0,
-                                alt.value('#4CAF50'),  # Green for export (positive WESM)
-                                alt.value('#F44336')   # Red for import (negative WESM)
+                                alt.value('#4CAF50'), 
+                                alt.value('#F44336')  
                             ),
                             tooltip=[alt.Tooltip(f'{COL_HOUR_STR}:N', title='Hour'), alt.Tooltip(f'{COL_WESM}:Q', title='Avg WESM (kWh)', format=',.0f')]
                         ).properties(
@@ -675,7 +672,6 @@ def show_dashboard():
                     else:
                         st.warning("WESM data not available or all null for the WESM chart.")
                 
-                # Tab 3: Price Chart
                 with chart_tabs[2]:
                     if COL_PRICES in hourly_avg_df_for_charts.columns and not hourly_avg_df_for_charts[COL_PRICES].isnull().all():
                         price_chart = alt.Chart(hourly_avg_df_for_charts).mark_line(point=True, color='#FF9800').encode(
@@ -698,13 +694,11 @@ def show_dashboard():
         st.subheader("Average Energy Flow Visualization (Sankey Diagram)")
         
         if COL_HOUR in data_for_averaging.columns and not data_for_averaging[COL_HOUR].isnull().all():
-            # Get unique hours present in the filtered data for the selectbox
             unique_hours_for_sankey = sorted(
                 [h.strftime('%H:%M') for h in data_for_averaging[COL_HOUR].dropna().unique() if isinstance(h, time)]
             )
             
             if unique_hours_for_sankey:
-                # Default to a common peak hour if available, otherwise the first available hour
                 default_sankey_hour = '14:00' if '14:00' in unique_hours_for_sankey else unique_hours_for_sankey[0]
                 selected_sankey_hour_str = st.selectbox(
                     "Select hour for average energy flow visualization:", 
@@ -713,22 +707,20 @@ def show_dashboard():
                     key="sankey_hour_selector"
                 )
                 
-                # Filter data for the selected hour to get average MQ and WESM for that specific hour
-                # across the selected days and date range
                 sankey_interval_data = data_for_averaging[data_for_averaging[COL_HOUR].apply(
                     lambda x: x.strftime('%H:%M') if isinstance(x, time) else '' 
                 ) == selected_sankey_hour_str]
                 
                 if not sankey_interval_data.empty:
-                    # Calculate average MQ and WESM for this specific hour
+                    # For Series.mean(), skipna=True is default and a valid argument.
                     avg_mq_for_sankey_interval = float(sankey_interval_data[COL_TOTAL_MQ].mean(skipna=True) or 0)
-                    avg_wesm_for_sankey_interval = float(sankey_interval_data[COL_WESM].mean(skipna=True) or 0) # This is unscaled WESM
+                    avg_wesm_for_sankey_interval = float(sankey_interval_data[COL_WESM].mean(skipna=True) or 0) 
                     
                     sankey_chart_title_str = f"{', '.join(st.session_state.selected_days_of_week)} in {start_date_obj.strftime('%b %d')} - {end_date_obj.strftime('%b %d, %Y')}"
                     
                     sankey_fig = create_sankey_chart(
                         interval_mq_val=avg_mq_for_sankey_interval,
-                        interval_wesm_val_unscaled=avg_wesm_for_sankey_interval, # Pass the unscaled WESM; Sankey will derive its own from scaled generators and MQ
+                        interval_wesm_val_unscaled=avg_wesm_for_sankey_interval, 
                         chart_title_date_str=sankey_chart_title_str,
                         interval_time_hh_mm_str=selected_sankey_hour_str,
                         start_date_for_fetch=start_date_str,
@@ -738,7 +730,6 @@ def show_dashboard():
                     
                     if sankey_fig:
                         st.plotly_chart(sankey_fig, use_container_width=True)
-                    # else: create_sankey_chart will show an st.info message
                 else:
                     st.warning(f"No data available for hour {selected_sankey_hour_str} within the selected days and date range to generate the Sankey diagram.")
             else:
@@ -805,7 +796,7 @@ def show_about_page():
     
     # Display dashboard version and last update info in the sidebar
     st.sidebar.markdown("---")
-    st.sidebar.info("Dashboard Version: 1.2.1\nLast Updated: May 13, 2025") # Updated version
+    st.sidebar.info("Dashboard Version: 1.2.2\nLast Updated: May 13, 2025") # Updated version
 
 # --- MAIN APP EXECUTION ---
 if __name__ == "__main__":
