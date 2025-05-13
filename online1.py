@@ -470,117 +470,118 @@ def show_dashboard():
             else:
                 s_dict["Overall Avg Price (PHP/kWh)"] = "N/A"
 
-           st.subheader("Average Hourly Metrics Visualization")
-            chart_tabs = st.tabs(["Avg MQ & BCQ by Hour", "Avg WESM by Hour", "Avg Price by Hour"])
-            
-            # Process data for charts
-            try:
-                if 'Hour' in data_for_averaging.columns and not data_for_averaging['Hour'].isnull().all():
-                    data_for_averaging['Hour_Str'] = data_for_averaging['Hour'].apply(
-                        lambda x: x.strftime('%H:%M') if pd.notna(x) else 'Unknown'
-                    )
-                    hourly_avg_df = data_for_averaging.groupby('Hour_Str').agg({
-                        'Total_MQ': 'mean', 
-                        'Total_BCQ': 'mean',
-                        'WESM': 'mean',
-                        'Prices': 'mean'
-                    }).reset_index()
-                    
-                    # Sort by hour properly
-                    hourly_avg_df['Hour_Sort'] = pd.to_datetime(hourly_avg_df['Hour_Str'], format='%H:%M', errors='coerce')
-                    hourly_avg_df = hourly_avg_df.sort_values('Hour_Sort').drop('Hour_Sort', axis=1)
-                    
-                    # Fill in Tab 1: MQ & BCQ Chart
-                    with chart_tabs[0]:
-                        if all(c in hourly_avg_df.columns for c in ['Hour_Str', 'Total_MQ', 'Total_BCQ']):
-                            # Prepare data for Altair
-                            mq_bcq_data = pd.melt(
-                                hourly_avg_df, 
-                                id_vars=['Hour_Str'], 
-                                value_vars=['Total_MQ', 'Total_BCQ'],
-                                var_name='Metric', 
-                                value_name='Value'
-                            )
-                            
-                            # Create Altair chart for MQ & BCQ
-                            mq_bcq_chart = alt.Chart(mq_bcq_data).mark_line(point=True).encode(
-                                x=alt.X('Hour_Str:N', title='Hour of Day', sort=None),
-                                y=alt.Y('Value:Q', title='Average Energy (kWh)', scale=alt.Scale(zero=False)),
-                                color=alt.Color('Metric:N', legend=alt.Legend(title='Metric')),
-                                tooltip=['Hour_Str', 'Metric', alt.Tooltip('Value:Q', format=',.2f')]
-                            ).properties(
-                                title=f'Average Hourly MQ & BCQ ({", ".join(st.session_state.selected_days_of_week)} in selected range)',
-                                width=700,
-                                height=400
-                            ).configure_axis(
-                                labelAngle=45
-                            )
-                            
-                            st.altair_chart(mq_bcq_chart, use_container_width=True)
-                        else:
-                            st.warning("Missing required data columns for MQ & BCQ chart.")
-                    
-                    # Fill in Tab 2: WESM Chart
-                    with chart_tabs[1]:
-                        if 'WESM' in hourly_avg_df.columns and not hourly_avg_df['WESM'].isnull().all():
-                            # Red for negative values (import), green for positive (export)
-                            wesm_chart = alt.Chart(hourly_avg_df).mark_bar().encode(
-                                x=alt.X('Hour_Str:N', title='Hour of Day', sort=None),
-                                y=alt.Y('WESM:Q', title='Average WESM (kWh)'),
-                                color=alt.condition(
-                                    alt.datum.WESM > 0,
-                                    alt.value('#4CAF50'),  # Green for export
-                                    alt.value('#F44336')   # Red for import
-                                ),
-                                tooltip=[
-                                    alt.Tooltip('Hour_Str:N', title='Hour'),
-                                    alt.Tooltip('WESM:Q', title='Avg WESM', format=',.2f')
-                                ]
-                            ).properties(
-                                title=f'Average Hourly WESM (+Export/-Import) ({", ".join(st.session_state.selected_days_of_week)} in selected range)',
-                                width=700,
-                                height=400
-                            ).configure_axis(
-                                labelAngle=45
-                            )
-                            
-                            st.altair_chart(wesm_chart, use_container_width=True)
-                            
-                            # Add text explanation of WESM values
-                            with st.expander("Understanding WESM Values"):
-                                st.markdown("""
-                                - **Positive WESM (Green)**: Net Export - You're selling excess energy to the grid
-                                - **Negative WESM (Red)**: Net Import - You're buying additional energy from the grid
-                                """)
-                        else:
-                            st.warning("WESM data not available or all null.")
-                    
-                    # Fill in Tab 3: Price Chart
-                    with chart_tabs[2]:
-                        if 'Prices' in hourly_avg_df.columns and not hourly_avg_df['Prices'].isnull().all():
-                            price_chart = alt.Chart(hourly_avg_df).mark_line(point=True, color='#FF9800').encode(
-                                x=alt.X('Hour_Str:N', title='Hour of Day', sort=None),
-                                y=alt.Y('Prices:Q', title='Average Price (PHP/kWh)', scale=alt.Scale(zero=False)),
-                                tooltip=[
-                                    alt.Tooltip('Hour_Str:N', title='Hour'),
-                                    alt.Tooltip('Prices:Q', title='Avg Price', format=',.2f')
-                                ]
-                            ).properties(
-                                title=f'Average Hourly Prices ({", ".join(st.session_state.selected_days_of_week)} in selected range)',
-                                width=700,
-                                height=400
-                            ).configure_axis(
-                                labelAngle=45
-                            )
-                            
-                            st.altair_chart(price_chart, use_container_width=True)
-                        else:
-                            st.warning("Price data not available or all null.")
-                else:
-                    st.warning("Hour data not available for charts.")
-            except Exception as e:
-                st.error(f"Error creating charts: {e}")
+# --- Charts ---
+        st.subheader("Average Hourly Metrics Visualization")
+        chart_tabs = st.tabs(["Avg MQ & BCQ by Hour", "Avg WESM by Hour", "Avg Price by Hour"])
         
+        # Process data for charts
+        try:
+            if 'Hour' in data_for_averaging.columns and not data_for_averaging['Hour'].isnull().all():
+                data_for_averaging['Hour_Str'] = data_for_averaging['Hour'].apply(
+                    lambda x: x.strftime('%H:%M') if pd.notna(x) else 'Unknown'
+                )
+                hourly_avg_df = data_for_averaging.groupby('Hour_Str').agg({
+                    'Total_MQ': 'mean', 
+                    'Total_BCQ': 'mean',
+                    'WESM': 'mean',
+                    'Prices': 'mean'
+                }).reset_index()
+                
+                # Sort by hour properly
+                hourly_avg_df['Hour_Sort'] = pd.to_datetime(hourly_avg_df['Hour_Str'], format='%H:%M', errors='coerce')
+                hourly_avg_df = hourly_avg_df.sort_values('Hour_Sort').drop('Hour_Sort', axis=1)
+                
+                # Fill in Tab 1: MQ & BCQ Chart
+                with chart_tabs[0]:
+                    if all(c in hourly_avg_df.columns for c in ['Hour_Str', 'Total_MQ', 'Total_BCQ']):
+                        # Prepare data for Altair
+                        mq_bcq_data = pd.melt(
+                            hourly_avg_df, 
+                            id_vars=['Hour_Str'], 
+                            value_vars=['Total_MQ', 'Total_BCQ'],
+                            var_name='Metric', 
+                            value_name='Value'
+                        )
+                        
+                        # Create Altair chart for MQ & BCQ
+                        mq_bcq_chart = alt.Chart(mq_bcq_data).mark_line(point=True).encode(
+                            x=alt.X('Hour_Str:N', title='Hour of Day', sort=None),
+                            y=alt.Y('Value:Q', title='Average Energy (kWh)', scale=alt.Scale(zero=False)),
+                            color=alt.Color('Metric:N', legend=alt.Legend(title='Metric')),
+                            tooltip=['Hour_Str', 'Metric', alt.Tooltip('Value:Q', format=',.2f')]
+                        ).properties(
+                            title=f'Average Hourly MQ & BCQ ({", ".join(st.session_state.selected_days_of_week)} in selected range)',
+                            width=700,
+                            height=400
+                        ).configure_axis(
+                            labelAngle=45
+                        )
+                        
+                        st.altair_chart(mq_bcq_chart, use_container_width=True)
+                    else:
+                        st.warning("Missing required data columns for MQ & BCQ chart.")
+                
+                # Fill in Tab 2: WESM Chart
+                with chart_tabs[1]:
+                    if 'WESM' in hourly_avg_df.columns and not hourly_avg_df['WESM'].isnull().all():
+                        # Red for negative values (import), green for positive (export)
+                        wesm_chart = alt.Chart(hourly_avg_df).mark_bar().encode(
+                            x=alt.X('Hour_Str:N', title='Hour of Day', sort=None),
+                            y=alt.Y('WESM:Q', title='Average WESM (kWh)'),
+                            color=alt.condition(
+                                alt.datum.WESM > 0,
+                                alt.value('#4CAF50'),  # Green for export
+                                alt.value('#F44336')   # Red for import
+                            ),
+                            tooltip=[
+                                alt.Tooltip('Hour_Str:N', title='Hour'),
+                                alt.Tooltip('WESM:Q', title='Avg WESM', format=',.2f')
+                            ]
+                        ).properties(
+                            title=f'Average Hourly WESM (+Export/-Import) ({", ".join(st.session_state.selected_days_of_week)} in selected range)',
+                            width=700,
+                            height=400
+                        ).configure_axis(
+                            labelAngle=45
+                        )
+                        
+                        st.altair_chart(wesm_chart, use_container_width=True)
+                        
+                        # Add text explanation of WESM values
+                        with st.expander("Understanding WESM Values"):
+                            st.markdown("""
+                            - **Positive WESM (Green)**: Net Export - You're selling excess energy to the grid
+                            - **Negative WESM (Red)**: Net Import - You're buying additional energy from the grid
+                            """)
+                    else:
+                        st.warning("WESM data not available or all null.")
+                
+                # Fill in Tab 3: Price Chart
+                with chart_tabs[2]:
+                    if 'Prices' in hourly_avg_df.columns and not hourly_avg_df['Prices'].isnull().all():
+                        price_chart = alt.Chart(hourly_avg_df).mark_line(point=True, color='#FF9800').encode(
+                            x=alt.X('Hour_Str:N', title='Hour of Day', sort=None),
+                            y=alt.Y('Prices:Q', title='Average Price (PHP/kWh)', scale=alt.Scale(zero=False)),
+                            tooltip=[
+                                alt.Tooltip('Hour_Str:N', title='Hour'),
+                                alt.Tooltip('Prices:Q', title='Avg Price', format=',.2f')
+                            ]
+                        ).properties(
+                            title=f'Average Hourly Prices ({", ".join(st.session_state.selected_days_of_week)} in selected range)',
+                            width=700,
+                            height=400
+                        ).configure_axis(
+                            labelAngle=45
+                        )
+                        
+                        st.altair_chart(price_chart, use_container_width=True)
+                    else:
+                        st.warning("Price data not available or all null.")
+            else:
+                st.warning("Hour data not available for charts.")
+        except Exception as e:
+            st.error(f"Error creating charts: {e}")
+    
         # --- Sankey Diagram (Energy Flow) ---
         st.subheader("Average Energy Flow Visualization")
         
