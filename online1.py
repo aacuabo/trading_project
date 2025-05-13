@@ -392,7 +392,7 @@ def show_dashboard():
     kpi_font_css = """
     <style>
         div[data-testid="stMetric"] > label[data-testid="stMetricLabel"] > div {
-            font-size: 0.50em !important; /* Adjust label font size */
+            font-size: 0.25em !important; /* Adjust label font size */
         }
         div[data-testid="stMetric"] > div[data-testid="stMetricValue"] > div {
             font-size: .75em !important; /* Adjust value font size */
