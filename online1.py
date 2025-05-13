@@ -476,7 +476,7 @@ def show_dashboard():
             avg_daily_min_price = float(daily_grouped[COL_PRICES].min().mean(skipna=True) or 0)
             
             col1.metric("Avg Max Price (PHP/kWh)", f"{avg_daily_max_price:,.2f}" if pd.notna(avg_daily_max_price) and avg_daily_max_price != 0 else "N/A")
-            col2.metric("Avg Avg Price (PHP/kWh)", f"{avg_daily_avg_price:,.2f}" if pd.notna(avg_daily_avg_price) and avg_daily_avg_price != 0 else "N/A")
+            col2.metric("Avg Price (PHP/kWh)", f"{avg_daily_avg_price:,.2f}" if pd.notna(avg_daily_avg_price) and avg_daily_avg_price != 0 else "N/A")
             col3.metric("Avg Min Price (PHP/kWh)", f"{avg_daily_min_price:,.2f}" if pd.notna(avg_daily_min_price) and avg_daily_min_price != 0 else "N/A")
         else:
             # Display placeholder metrics if price data is missing
@@ -536,15 +536,16 @@ def show_dashboard():
             for c in [COL_TOTAL_MQ, COL_TOTAL_BCQ, COL_WESM]:
                 if c in data_for_averaging.columns and pd.api.types.is_numeric_dtype(data_for_averaging[c]):
                     try:
-                        avg_daily_sum_kwh = float(daily_grouped[c].sum().mean(skipna=True) or 0)
+                        avg_daily_sum_kwh = float(daily_grouped[c].sum() or 0)
                         
                         if c == COL_TOTAL_MQ:
                             label = "Sum Total MQ (MWh)"
                             value_mwh = avg_daily_sum_kwh / 1000
                             display_value = f"{value_mwh:,.3f}" if pd.notna(value_mwh) and value_mwh != 0 else "N/A"
                         elif c == COL_TOTAL_BCQ:
-                            label = "Sum Total BCQ (kWh)"
-                            display_value = f"{avg_daily_sum_kwh:,.0f}" if pd.notna(avg_daily_sum_kwh) and avg_daily_sum_kwh != 0 else "N/A"
+                            label = "Sum Total BCQ (MWh)"
+                            value_mwh = avg_daily_sum_kwh / 1000
+                            display_value = f"{value_mwh:,.0f}" if pd.notna(value_mwh) and value_mwh != 0 else "N/A"
                         else: # For WESM
                             label = f"Avg Daily Sum {c.replace('_', ' ')} (kWh)"
                             display_value = f"{avg_daily_sum_kwh:,.0f}" if pd.notna(avg_daily_sum_kwh) and avg_daily_sum_kwh != 0 else "N/A"
