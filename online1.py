@@ -235,7 +235,7 @@ def fetch_sankey_destination_consumption_averaged(start_date_str: str, end_date_
 def create_sankey_chart(
     interval_mq_val: float, 
     interval_wesm_val_unscaled: float, 
-    chart_title_date_str: str, 
+    chart_title_date_str: str, # Will be appended with "Sum of Range"
     interval_time_hh_mm_str: str, 
     start_date_for_fetch: str, 
     end_date_for_fetch: str,   
@@ -337,6 +337,9 @@ def create_sankey_chart(
     
     sankey_values = [float(val) for val in sankey_values]
     
+    # --- Updated Sankey Title ---
+    full_sankey_title = f"Avg Energy Flow: {interval_time_hh_mm_str} (Sum of Range: {chart_title_date_str})"
+
     fig = go.Figure(data=[go.Sankey(
         arrangement="snap", 
         node=dict(
@@ -355,7 +358,7 @@ def create_sankey_chart(
     )])
     
     fig.update_layout(
-        title=dict(text=f"Avg Energy Flow: {interval_time_hh_mm_str}, {chart_title_date_str}", font=dict(size=16)),
+        title=dict(text=full_sankey_title, font=dict(size=16)), # Use the updated title
         font=dict(family="Arial, sans-serif", size=12), 
         plot_bgcolor='rgba(0,0,0,0)', 
         paper_bgcolor='rgba(0,0,0,0)', 
@@ -383,24 +386,17 @@ def app_content():
 def show_dashboard():
     """Displays the main dashboard content including filters, KPIs, tables, and charts."""
     
-    # --- Custom CSS for KPI font size ---
-    # Streamlit's st.metric uses specific classes. We target them to reduce font size.
-    # The classes are typically like `stMetricLabel` and `stMetricValue`.
-    # Inspect element in browser to confirm exact class names if needed.
-    # Using `em` or `rem` for font size is generally better for accessibility than `px`.
-    # `0.8em` means 80% of the parent element's font size.
     kpi_font_css = """
     <style>
         div[data-testid="stMetric"] > label[data-testid="stMetricLabel"] > div {
-            font-size: 0.25em !important; /* Adjust label font size */
+            font-size: 0.85em !important; 
         }
         div[data-testid="stMetric"] > div[data-testid="stMetricValue"] > div {
-            font-size: .80em !important; /* Adjust value font size */
+            font-size: 1.1em !important; 
         }
     </style>
     """
     st.markdown(kpi_font_css, unsafe_allow_html=True)
-    # --- End of Custom CSS ---
 
     spacer_left, main_content, spacer_right = st.columns([0.1, 5.8, 0.1]) 
 
@@ -475,11 +471,10 @@ def show_dashboard():
             avg_daily_avg_price = float(daily_grouped[COL_PRICES].mean().mean(skipna=True) or 0)
             avg_daily_min_price = float(daily_grouped[COL_PRICES].min().mean(skipna=True) or 0)
             
-            col1.metric("Avg Max Price (PHP/kWh)", f"{avg_daily_max_price:,.2f}" if pd.notna(avg_daily_max_price) and avg_daily_max_price != 0 else "N/A")
-            col2.metric("Avg Price (PHP/kWh)", f"{avg_daily_avg_price:,.2f}" if pd.notna(avg_daily_avg_price) and avg_daily_avg_price != 0 else "N/A")
-            col3.metric("Avg Min Price (PHP/kWh)", f"{avg_daily_min_price:,.2f}" if pd.notna(avg_daily_min_price) and avg_daily_min_price != 0 else "N/A")
+            col1.metric("Avg Daily Max Price", f"{avg_daily_max_price:,.2f} PHP/kWh" if pd.notna(avg_daily_max_price) and avg_daily_max_price != 0 else "N/A")
+            col2.metric("Avg Daily Avg Price", f"{avg_daily_avg_price:,.2f} PHP/kWh" if pd.notna(avg_daily_avg_price) and avg_daily_avg_price != 0 else "N/A")
+            col3.metric("Avg Daily Min Price", f"{avg_daily_min_price:,.2f} PHP/kWh" if pd.notna(avg_daily_min_price) and avg_daily_min_price != 0 else "N/A")
         else:
-            # Display placeholder metrics if price data is missing
             with col1: st.metric(label="Price N/A", value="-")
             with col2: st.metric(label="Price N/A", value="-")
             with col3: st.metric(label="Price N/A", value="-")
@@ -536,16 +531,17 @@ def show_dashboard():
             for c in [COL_TOTAL_MQ, COL_TOTAL_BCQ, COL_WESM]:
                 if c in data_for_averaging.columns and pd.api.types.is_numeric_dtype(data_for_averaging[c]):
                     try:
-                        avg_daily_sum_kwh = float(daily_grouped[c].sum() or 0)
+                        # Corrected calculation: sum daily totals, then average those daily sums
+                        avg_daily_sum_kwh = float(daily_grouped[c].sum().mean(skipna=True) or 0)
                         
                         if c == COL_TOTAL_MQ:
                             label = "Sum Total MQ (MWh)"
                             value_mwh = avg_daily_sum_kwh / 1000
                             display_value = f"{value_mwh:,.3f}" if pd.notna(value_mwh) and value_mwh != 0 else "N/A"
                         elif c == COL_TOTAL_BCQ:
-                            label = "Sum Total BCQ (MWh)"
-                            value_mwh = avg_daily_sum_kwh / 1000
-                            display_value = f"{value_mwh:,.0f}" if pd.notna(value_mwh) and value_mwh != 0 else "N/A"
+                            label = "Sum Total BCQ (MWh)" # Corrected label
+                            value_mwh = avg_daily_sum_kwh / 1000 # Corrected unit conversion
+                            display_value = f"{value_mwh:,.3f}" if pd.notna(value_mwh) and value_mwh != 0 else "N/A" # Corrected formatting
                         else: # For WESM
                             label = f"Avg Daily Sum {c.replace('_', ' ')} (kWh)"
                             display_value = f"{avg_daily_sum_kwh:,.0f}" if pd.notna(avg_daily_sum_kwh) and avg_daily_sum_kwh != 0 else "N/A"
@@ -553,13 +549,12 @@ def show_dashboard():
                         s_dict[label] = display_value
                     except Exception as e:
                         st.warning(f"Error calculating average daily sum for {c}: {e}")
-                        s_dict[f"Avg Daily Sum {c.replace('_', ' ')} (kWh)"] = "Error" # Fallback label for error
+                        s_dict[f"Avg Daily Sum {c.replace('_', ' ')} (kWh)"] = "Error" 
                 else:
-                    # Adjust label based on column if data is missing
                     if c == COL_TOTAL_MQ:
                         s_dict["Sum Total MQ (MWh)"] = "N/A (Data Missing)"
                     elif c == COL_TOTAL_BCQ:
-                        s_dict["Sum Total BCQ (kWh)"] = "N/A (Data Missing)"
+                        s_dict["Sum Total BCQ (MWh)"] = "N/A (Data Missing)" # Corrected label for missing data
                     else:
                         s_dict[f"Avg Daily Sum {c.replace('_', ' ')} (kWh)"] = "N/A (Data Missing)"
             
@@ -708,12 +703,13 @@ def show_dashboard():
                     avg_mq_for_sankey_interval = float(sankey_interval_data[COL_TOTAL_MQ].mean(skipna=True) or 0)
                     avg_wesm_for_sankey_interval = float(sankey_interval_data[COL_WESM].mean(skipna=True) or 0) 
                     
+                    # Updated title string for Sankey
                     sankey_chart_title_str = f"{', '.join(st.session_state.selected_days_of_week)} in {start_date_obj.strftime('%b %d')} - {end_date_obj.strftime('%b %d, %Y')}"
                     
                     sankey_fig = create_sankey_chart(
                         interval_mq_val=avg_mq_for_sankey_interval,
                         interval_wesm_val_unscaled=avg_wesm_for_sankey_interval, 
-                        chart_title_date_str=sankey_chart_title_str,
+                        chart_title_date_str=sankey_chart_title_str, # This part is for the "Sum of Range"
                         interval_time_hh_mm_str=selected_sankey_hour_str,
                         start_date_for_fetch=start_date_str,
                         end_date_for_fetch=end_date_str,
@@ -787,7 +783,7 @@ def show_about_page():
     """)
     
     st.sidebar.markdown("---")
-    st.sidebar.info("Dashboard Version: 1.2.3\nLast Updated: May 13, 2025") # Updated version
+    st.sidebar.info("Dashboard Version: 1.2.4\nLast Updated: May 13, 2025") # Updated version
 
 # --- MAIN APP EXECUTION ---
 if __name__ == "__main__":
