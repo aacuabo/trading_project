@@ -475,9 +475,9 @@ def show_dashboard():
             avg_daily_avg_price = float(daily_grouped[COL_PRICES].mean().mean(skipna=True) or 0)
             avg_daily_min_price = float(daily_grouped[COL_PRICES].min().mean(skipna=True) or 0)
             
-            col1.metric("Avg Daily Max Price", f"{avg_daily_max_price:,.2f} PHP/kWh" if pd.notna(avg_daily_max_price) and avg_daily_max_price != 0 else "N/A")
-            col2.metric("Avg Daily Avg Price", f"{avg_daily_avg_price:,.2f} PHP/kWh" if pd.notna(avg_daily_avg_price) and avg_daily_avg_price != 0 else "N/A")
-            col3.metric("Avg Daily Min Price", f"{avg_daily_min_price:,.2f} PHP/kWh" if pd.notna(avg_daily_min_price) and avg_daily_min_price != 0 else "N/A")
+            col1.metric("Avg Daily Max Price (PHP/kWh)", f"{avg_daily_max_price:,.2f}" if pd.notna(avg_daily_max_price) and avg_daily_max_price != 0 else "N/A")
+            col2.metric("Avg Daily Avg Price (PHP/kWh)", f"{avg_daily_avg_price:,.2f}" if pd.notna(avg_daily_avg_price) and avg_daily_avg_price != 0 else "N/A")
+            col3.metric("Avg Daily Min Price (PHP/kWh)", f"{avg_daily_min_price:,.2f}" if pd.notna(avg_daily_min_price) and avg_daily_min_price != 0 else "N/A")
         else:
             # Display placeholder metrics if price data is missing
             with col1: st.metric(label="Price N/A", value="-")
