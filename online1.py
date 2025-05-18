@@ -681,7 +681,8 @@ def show_dashboard():
                     else: st.warning("Missing data for MQ, BCQ, or Prices chart.")
                 
                 with chart_tabs_viz[1]:
-                    if all(c in hourly_avg_df_for_charts.columns for c in [COL_HOUR_STR, COL_WESM, COL_PRICES, COL_ABS_WESM])):
+                    # Corrected the condition for the WESM chart
+                    if all(c in hourly_avg_df_for_charts.columns for c in [COL_HOUR_STR, COL_WESM, COL_PRICES, COL_ABS_WESM]):
                         base_wesm = alt.Chart(hourly_avg_df_for_charts).encode(x=alt.X(f'{COL_HOUR_STR}:N', title='Hour of Day (Average)', sort=None))
                         bar_wesm = base_wesm.mark_bar().encode(
                             y=alt.Y(f'{COL_ABS_WESM}:Q', title='Avg WESM Volume (kWh)', axis=alt.Axis(titleColor='purple')), # Use absolute for y-axis magnitude
@@ -827,7 +828,7 @@ def show_about_page():
     """)
     
     st.sidebar.markdown("---")
-    st.sidebar.info("Dashboard Version: 1.4.0\nLast Updated: May 18, 2025") 
+    st.sidebar.info("Dashboard Version: 1.4.1\nLast Updated: May 18, 2025") # Updated version
 
 # --- MAIN APP EXECUTION ---
 if __name__ == "__main__":
