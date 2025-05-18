@@ -458,79 +458,86 @@ def show_dashboard():
         
         # Layout for remaining top-level KPIs
         # Using 3 columns for the remaining top KPIs.
-        kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+       # kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
         
-        daily_grouped = data_for_period.groupby(data_for_period[COL_DATE].dt.date)
+        #daily_grouped = data_for_period.groupby(data_for_period[COL_DATE].dt.date)
 
-        if COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]):
-            avg_daily_avg_price = float(daily_grouped[COL_PRICES].mean().mean(skipna=True) or 0)
-            avg_daily_min_price = float(daily_grouped[COL_PRICES].min().mean(skipna=True) or 0)
+      #  if COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]):
+      #      avg_daily_avg_price = float(daily_grouped[COL_PRICES].mean().mean(skipna=True) or 0)
+       #     avg_daily_min_price = float(daily_grouped[COL_PRICES].min().mean(skipna=True) or 0)
             
-            kpi_col1.metric("Avg Daily Avg Price", f"{avg_daily_avg_price:,.2f} PHP/kWh" if pd.notna(avg_daily_avg_price) and avg_daily_avg_price != 0 else "N/A")
-            kpi_col2.metric("Avg Daily Min Price", f"{avg_daily_min_price:,.2f} PHP/kWh" if pd.notna(avg_daily_min_price) and avg_daily_min_price != 0 else "N/A")
-        else:
-            with kpi_col1: st.metric(label="Avg Price N/A", value="-")
-            with kpi_col2: st.metric(label="Min Price N/A", value="-")
+       #     kpi_col1.metric("Avg Daily Avg Price", f"{avg_daily_avg_price:,.2f} PHP/kWh" if pd.notna(avg_daily_avg_price) and avg_daily_avg_price != 0 else "N/A")
+       #     kpi_col2.metric("Avg Daily Min Price", f"{avg_daily_min_price:,.2f} PHP/kWh" if pd.notna(avg_daily_min_price) and avg_daily_min_price != 0 else "N/A")
+       # else:
+       #     with kpi_col1: st.metric(label="Avg Price N/A", value="-")
+       #     with kpi_col2: st.metric(label="Min Price N/A", value="-")
 
-        if COL_TOTAL_MQ in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_TOTAL_MQ]):
-            avg_of_daily_max_mq = float(daily_grouped[COL_TOTAL_MQ].max().mean(skipna=True) or 0)
-            kpi_col3.metric("Avg Daily Max Total MQ", f"{avg_of_daily_max_mq:,.0f} kWh" if pd.notna(avg_of_daily_max_mq) and avg_of_daily_max_mq != 0 else "N/A", help="Average of the maximum Total MQ recorded each selected day.")
-        else:
-            with kpi_col3: st.metric("Avg Max MQ N/A", "N/A")
+        #if COL_TOTAL_MQ in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_TOTAL_MQ]):
+        #    avg_of_daily_max_mq = float(daily_grouped[COL_TOTAL_MQ].max().mean(skipna=True) or 0)
+        #    kpi_col3.metric("Avg Daily Max Total MQ", f"{avg_of_daily_max_mq:,.0f} kWh" if pd.notna(avg_of_daily_max_mq) and avg_of_daily_max_mq != 0 else "N/A", help="Average of the maximum Total MQ recorded each selected day.")
+        #else:
+        #    with kpi_col3: st.metric("Avg Max MQ N/A", "N/A")
 
 
         # --- Data Overview for Selected Period (Tabs) ---
         st.subheader("Data Overview for Selected Period")
         # Tab order: 1. Summary, 2. Average Hourly Data, 3. Hourly Data (Selected Range)
-        tbl_tabs = st.tabs(["Summary (Totals & Period Averages)", "Average Hourly Data", "Hourly Data (Selected Range)"]) 
+        tbl_tabs = st.tabs(["Summary", "Average Hourly Data", "Hourly Data (Selected Range)"]) 
         
-        with tbl_tabs[0]: # "Summary" tab
-            s_dict = {} 
-            
+tbl_tabs = st.tabs(["Summary", "Hourly Average Data", "Hourly Sankey"])
+
+        with tbl_tabs[0]:  # "Summary" tab
+            s_dict = {}
+
             # Avg Daily Max Price (moved here)
             if COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]):
                 avg_daily_max_price = float(daily_grouped[COL_PRICES].max().mean(skipna=True) or 0)
                 s_dict["Avg Daily Max Price (PHP/kWh)"] = f"{avg_daily_max_price:,.2f}" if pd.notna(avg_daily_max_price) and avg_daily_max_price != 0 else "N/A"
             else:
-                 s_dict["Avg Daily Max Price (PHP/kWh)"] = "N/A (Data Missing)"
+                s_dict["Avg Daily Max Price (PHP/kWh)"] = "N/A (Data Missing)"
 
             # Max Hourly Total BCQ for the range
             if COL_TOTAL_BCQ in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_TOTAL_BCQ]):
                 max_hourly_bcq = float(data_for_period[COL_TOTAL_BCQ].max(skipna=True) or 0)
-                s_dict["Max Hourly Total BCQ (kWh)"] = f"{max_hourly_bcq:,.0f}" if pd.notna(max_hourly_bcq) and max_hourly_bcq !=0 else "N/A"
+                s_dict["Max Hourly Total BCQ (kWh)"] = f"{max_hourly_bcq:,.0f}" if pd.notna(max_hourly_bcq) and max_hourly_bcq != 0 else "N/A"
             else:
                 s_dict["Max Hourly Total BCQ (kWh)"] = "N/A (Data Missing)"
-
 
             for c in [COL_TOTAL_MQ, COL_TOTAL_BCQ, COL_WESM]:
                 if c in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[c]):
                     try:
                         total_sum_for_period_kwh = float(data_for_period[c].sum(skipna=True) or 0)
-                        
+
                         if c == COL_TOTAL_MQ:
                             label = "Sum Total MQ (MWh)"
                             value_mwh = total_sum_for_period_kwh / 1000
                             display_value = f"{value_mwh:,.3f}" if pd.notna(value_mwh) and value_mwh != 0 else "N/A"
                         elif c == COL_TOTAL_BCQ:
                             # This is total sum, already handled Max Hourly BCQ above
-                            label = "Sum Total BCQ (MWh)" 
-                            value_mwh = total_sum_for_period_kwh / 1000 
-                            display_value = f"{value_mwh:,.3f}" if pd.notna(value_mwh) and value_mwh != 0 else "N/A" 
-                        elif c == COL_WESM: 
-                            label = "Total WESM (kWh)" 
-                            display_value = f"{total_sum_for_period_kwh:,.0f}" if pd.notna(total_sum_for_period_kwh) else "N/A" 
-                        
+                            label = "Sum Total BCQ (MWh)"
+                            value_mwh = total_sum_for_period_kwh / 1000
+                            display_value = f"{value_mwh:,.3f}" if pd.notna(value_mwh) and value_mwh != 0 else "N/A"
+                        elif c == COL_WESM:
+                            label = "Total WESM (kWh)"
+                            display_value = f"{total_sum_for_period_kwh:,.0f}" if pd.notna(total_sum_for_period_kwh) else "N/A"
+
                         s_dict[label] = display_value
                     except Exception as e:
                         st.warning(f"Error calculating total sum for {c}: {e}")
-                        if c == COL_TOTAL_MQ: s_dict["Sum Total MQ (MWh)"] = "Error"
-                        elif c == COL_TOTAL_BCQ: s_dict["Sum Total BCQ (MWh)"] = "Error"
-                        elif c == COL_WESM: s_dict["Total WESM (kWh)"] = "Error"
-                else: 
-                    if c == COL_TOTAL_MQ: s_dict["Sum Total MQ (MWh)"] = "N/A (Data Missing)"
-                    elif c == COL_TOTAL_BCQ: s_dict["Sum Total BCQ (MWh)"] = "N/A (Data Missing)"
-                    elif c == COL_WESM: s_dict["Total WESM (kWh)"] = "N/A (Data Missing)"
-            
+                        if c == COL_TOTAL_MQ:
+                            s_dict["Sum Total MQ (MWh)"] = "Error"
+                        elif c == COL_TOTAL_BCQ:
+                            s_dict["Sum Total BCQ (MWh)"] = "Error"
+                        elif c == COL_WESM:
+                            s_dict["Total WESM (kWh)"] = "Error"
+                else:
+                    if c == COL_TOTAL_MQ:
+                        s_dict["Sum Total MQ (MWh)"] = "N/A (Data Missing)"
+                    elif c == COL_TOTAL_BCQ:
+                        s_dict["Sum Total BCQ (MWh)"] = "N/A (Data Missing)"
+                    elif c == COL_WESM:
+                        s_dict["Total WESM (kWh)"] = "N/A (Data Missing)"
+
             if COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]):
                 try:
                     overall_avg_price = float(data_for_period[COL_PRICES].mean(skipna=True) or 0)
@@ -543,19 +550,17 @@ def show_dashboard():
 
             if s_dict:
                 num_metrics = len(s_dict)
-                # Adjust columns dynamically, e.g., max 4 per row for better readability
-                cols_per_row = min(num_metrics, 4) if num_metrics > 0 else 1
+                # Allow user to choose number of columns.  Default to 4 if input is invalid
+                desired_cols = st.number_input("Number of Columns for Summary Metrics", min_value=1, max_value=num_metrics, value=4, step=1)
+                cols_per_row = min(num_metrics, desired_cols) if 1 <= desired_cols <= num_metrics else 4
                 summary_cols = st.columns(cols_per_row)
                 col_idx = 0
-                # Sort dictionary by keys for consistent order if desired, or keep as is
-                # sorted_s_dict = dict(sorted(s_dict.items()))
-                for key, value in s_dict.items(): # Use s_dict or sorted_s_dict
+                for key, value in s_dict.items():
                     with summary_cols[col_idx % cols_per_row]:
                         st.metric(label=key, value=str(value))
-                    col_idx +=1
+                    col_idx += 1
             else:
                 st.info("No summary data to display for the selected criteria.")
-
         with tbl_tabs[1]: # "Average Hourly Data" 
             if COL_HOUR in data_for_period.columns and not data_for_period[COL_HOUR].isnull().all():
                 try:
