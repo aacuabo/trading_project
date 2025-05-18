@@ -17,6 +17,7 @@ COL_PRICES = "Prices"
 COL_WESM = "WESM" # Derived column
 COL_HOUR = "Hour" # Derived column for processing
 COL_HOUR_STR = "Hour_Str" # Derived string representation of hour
+COL_ABS_WESM = "Abs_WESM" # For WESM chart y-axis
 
 # Generator and Destination Mapping Keys (Long Names from DB)
 FDC_MISAMIS_POWER = "FDC_Misamis_Power_Corporation__FDC"
@@ -53,7 +54,7 @@ def get_sqlalchemy_engine():
         port = int(st.secrets["database"]["port"])
         url = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db_name}"
         engine = create_engine(url, pool_pre_ping=True, connect_args={"connect_timeout": 15})
-        with engine.connect() as conn: # Test connection
+        with engine.connect() as conn: 
             pass 
         return engine
     except KeyError as e:
@@ -128,7 +129,7 @@ def fetch_data_for_range(start_date_str: str, end_date_str: str) -> pd.DataFrame
         st.error(f"Error fetching data for range: {e}")
         return pd.DataFrame()
 
-# --- SANKEY CHART HELPER FUNCTIONS (MODIFIED FOR TOTALS) ---
+# --- SANKEY CHART HELPER FUNCTIONS ---
 
 GENERATOR_LONG_TO_SHORT_MAP = {
     FDC_MISAMIS_POWER: 'FDC',
@@ -152,46 +153,26 @@ DESTINATION_LONG_TO_SHORT_MAP = {
     DEST_KIDCSCV02: 'KIDCSCV02_DEL'
 }
 
+# For TOTAL Sankey
 @st.cache_data(ttl=600)
 def fetch_sankey_generator_contributions_total(start_date_str: str, end_date_str: str, selected_day_indices: List[int]) -> Dict[str, float]:
-    """Fetches and sums generator contributions for the Sankey diagram over the entire period."""
     contributions = {short_name: 0.0 for short_name in GENERATOR_LONG_TO_SHORT_MAP.values()}
-    if not GENERATOR_LONG_TO_SHORT_MAP:
-        st.warning("Generator mapping is empty. Cannot fetch contributions.")
-        return contributions
+    if not GENERATOR_LONG_TO_SHORT_MAP: return contributions
     try:
         engine = get_sqlalchemy_engine()
-        query_columns_list = [f'SUM("{col_name}") AS "{col_name}_sum"' for col_name in GENERATOR_LONG_TO_SHORT_MAP.keys()]
-        query_columns_str = ', '.join(query_columns_list)
-
-        # Note: Grouping by Date first to filter by dayofweek, then summing those daily sums,
-        # or fetching all rows and summing in pandas.
-        # For simplicity and to ensure correct day filtering, fetch relevant rows then sum in pandas.
         select_cols_for_fetch = '", "'.join(GENERATOR_LONG_TO_SHORT_MAP.keys())
-        
-        query = f"""
-            SELECT "{COL_DATE}", "{select_cols_for_fetch}"
-            FROM "BCQ_Hourly"
-            WHERE "{COL_DATE}" BETWEEN %(start_date)s AND %(end_date)s;
-        """
+        query = f""" SELECT "{COL_DATE}", "{select_cols_for_fetch}" FROM "BCQ_Hourly" WHERE "{COL_DATE}" BETWEEN %(start_date)s AND %(end_date)s; """
         params = {"start_date": start_date_str, "end_date": end_date_str}
         period_data_df = pd.read_sql(query, engine, params=params)
-
-        if period_data_df.empty:
-            return contributions
-
+        if period_data_df.empty: return contributions
         period_data_df[COL_DATE] = pd.to_datetime(period_data_df[COL_DATE])
         filtered_df = period_data_df[period_data_df[COL_DATE].dt.dayofweek.isin(selected_day_indices)].copy()
-
-        if filtered_df.empty:
-            return contributions
-
+        if filtered_df.empty: return contributions
         for long_name, short_name in GENERATOR_LONG_TO_SHORT_MAP.items():
             if long_name in filtered_df.columns:
                 total_value = pd.to_numeric(filtered_df[long_name], errors='coerce').sum() 
                 if pd.notna(total_value):
-                    if long_name in GENERATOR_COLUMNS_TO_SCALE: 
-                        total_value *= 1000 
+                    if long_name in GENERATOR_COLUMNS_TO_SCALE: total_value *= 1000 
                     contributions[short_name] = float(total_value) if total_value > 0 else 0.0
         return contributions
     except Exception as e:
@@ -200,31 +181,18 @@ def fetch_sankey_generator_contributions_total(start_date_str: str, end_date_str
 
 @st.cache_data(ttl=600)
 def fetch_sankey_destination_consumption_total(start_date_str: str, end_date_str: str, selected_day_indices: List[int]) -> Dict[str, float]:
-    """Fetches and sums destination consumption for the Sankey diagram over the entire period."""
     consumption = {short_name: 0.0 for short_name in DESTINATION_LONG_TO_SHORT_MAP.values()}
-    if not DESTINATION_LONG_TO_SHORT_MAP:
-        st.warning("Destination mapping is empty. Cannot fetch consumption.")
-        return consumption
+    if not DESTINATION_LONG_TO_SHORT_MAP: return consumption
     try:
         engine = get_sqlalchemy_engine()
         select_cols_for_fetch = '", "'.join(DESTINATION_LONG_TO_SHORT_MAP.keys())
-        query = f"""
-            SELECT "{COL_DATE}", "{select_cols_for_fetch}"
-            FROM "MQ_Hourly"
-            WHERE "{COL_DATE}" BETWEEN %(start_date)s AND %(end_date)s;
-        """
+        query = f""" SELECT "{COL_DATE}", "{select_cols_for_fetch}" FROM "MQ_Hourly" WHERE "{COL_DATE}" BETWEEN %(start_date)s AND %(end_date)s; """
         params = {"start_date": start_date_str, "end_date": end_date_str}
         period_data_df = pd.read_sql(query, engine, params=params)
-
-        if period_data_df.empty:
-            return consumption
-
+        if period_data_df.empty: return consumption
         period_data_df[COL_DATE] = pd.to_datetime(period_data_df[COL_DATE])
         filtered_df = period_data_df[period_data_df[COL_DATE].dt.dayofweek.isin(selected_day_indices)].copy()
-
-        if filtered_df.empty:
-            return consumption
-
+        if filtered_df.empty: return consumption
         for long_name, short_name in DESTINATION_LONG_TO_SHORT_MAP.items():
             if long_name in filtered_df.columns:
                 total_value = pd.to_numeric(filtered_df[long_name], errors='coerce').sum() 
@@ -235,65 +203,103 @@ def fetch_sankey_destination_consumption_total(start_date_str: str, end_date_str
         st.error(f"Error fetching total Sankey destination consumption: {e}")
         return consumption
 
-def create_sankey_chart_total(
-    total_mq_val: float, 
-    chart_title_suffix: str, # e.g., "Weekdays in May 01 - May 07, 2025"
-    start_date_for_fetch: str, 
-    end_date_for_fetch: str,   
-    days_indices_for_fetch: List[int] 
-) -> Optional[go.Figure]:
-    """Creates a Plotly Sankey diagram for TOTAL energy flow over the selected period."""
-    if pd.isna(total_mq_val) or total_mq_val < 0: 
-        st.info(f"Invalid total MQ data for Sankey ({chart_title_suffix}): Total MQ = {total_mq_val:,.0f} kWh")
-        return None
+# For AVERAGED HOURLY Sankey
+@st.cache_data(ttl=600)
+def fetch_sankey_generator_contributions_averaged(start_date_str: str, end_date_str: str, selected_day_indices: List[int], interval_time_db_format: str) -> Dict[str, float]:
+    contributions = {short_name: 0.0 for short_name in GENERATOR_LONG_TO_SHORT_MAP.values()}
+    if not GENERATOR_LONG_TO_SHORT_MAP: return contributions
+    try:
+        engine = get_sqlalchemy_engine()
+        query_columns_list = [f'"{col_name}"' for col_name in GENERATOR_LONG_TO_SHORT_MAP.keys()]
+        query_columns_str = ', '.join(query_columns_list)
+        query = f""" SELECT "{COL_DATE}", {query_columns_str} FROM "BCQ_Hourly" WHERE "{COL_DATE}" BETWEEN %(start_date)s AND %(end_date)s AND "{COL_TIME}" = %(interval_time)s; """
+        params = {"start_date": start_date_str, "end_date": end_date_str, "interval_time": interval_time_db_format}
+        range_interval_data_df = pd.read_sql(query, engine, params=params)
+        if range_interval_data_df.empty: return contributions
+        range_interval_data_df[COL_DATE] = pd.to_datetime(range_interval_data_df[COL_DATE])
+        filtered_df = range_interval_data_df[range_interval_data_df[COL_DATE].dt.dayofweek.isin(selected_day_indices)].copy()
+        if filtered_df.empty: return contributions
+        for long_name, short_name in GENERATOR_LONG_TO_SHORT_MAP.items():
+            if long_name in filtered_df.columns:
+                avg_value = pd.to_numeric(filtered_df[long_name], errors='coerce').mean() 
+                if pd.notna(avg_value):
+                    if long_name in GENERATOR_COLUMNS_TO_SCALE: avg_value *= 1000 
+                    contributions[short_name] = float(avg_value) if avg_value > 0 else 0.0
+        return contributions
+    except Exception as e:
+        st.error(f"Error fetching averaged Sankey generator contributions: {e}")
+        return contributions
 
-    # Fetch total contributions and consumptions for the entire period
-    scaled_generator_contributions_total = fetch_sankey_generator_contributions_total(
-        start_date_for_fetch, end_date_for_fetch, days_indices_for_fetch
-    )
-    destination_consumptions_total = fetch_sankey_destination_consumption_total(
-        start_date_for_fetch, end_date_for_fetch, days_indices_for_fetch
-    )
+@st.cache_data(ttl=600)
+def fetch_sankey_destination_consumption_averaged(start_date_str: str, end_date_str: str, selected_day_indices: List[int], interval_time_db_format: str) -> Dict[str, float]:
+    consumption = {short_name: 0.0 for short_name in DESTINATION_LONG_TO_SHORT_MAP.values()}
+    if not DESTINATION_LONG_TO_SHORT_MAP: return consumption
+    try:
+        engine = get_sqlalchemy_engine()
+        query_columns_list = [f'"{col_name}"' for col_name in DESTINATION_LONG_TO_SHORT_MAP.keys()]
+        query_columns_str = ', '.join(query_columns_list)
+        query = f""" SELECT "{COL_DATE}", {query_columns_str} FROM "MQ_Hourly" WHERE "{COL_DATE}" BETWEEN %(start_date)s AND %(end_date)s AND "{COL_TIME}" = %(interval_time)s; """
+        params = {"start_date": start_date_str, "end_date": end_date_str, "interval_time": interval_time_db_format}
+        range_interval_data_df = pd.read_sql(query, engine, params=params)
+        if range_interval_data_df.empty: return consumption
+        range_interval_data_df[COL_DATE] = pd.to_datetime(range_interval_data_df[COL_DATE])
+        filtered_df = range_interval_data_df[range_interval_data_df[COL_DATE].dt.dayofweek.isin(selected_day_indices)].copy()
+        if filtered_df.empty: return consumption
+        for long_name, short_name in DESTINATION_LONG_TO_SHORT_MAP.items():
+            if long_name in filtered_df.columns:
+                avg_value = pd.to_numeric(filtered_df[long_name], errors='coerce').mean() 
+                if pd.notna(avg_value):
+                    consumption[short_name] = float(avg_value) if avg_value > 0 else 0.0
+        return consumption
+    except Exception as e:
+        st.error(f"Error fetching averaged Sankey destination consumption: {e}")
+        return consumption
 
-    sum_scaled_generator_contributions = float(sum(v for v in scaled_generator_contributions_total.values() if pd.notna(v)))
+def create_sankey_nodes_links(
+    contributions_data: Dict[str, float],
+    consumption_data: Dict[str, float],
+    flow_metric_val: float, # Total MQ for total Sankey, Avg MQ for hourly Sankey
+    junction_label_prefix: str = "Supply"
+) -> Tuple[Optional[List[str]], Optional[Dict[str, int]], Optional[List[int]], Optional[List[int]], Optional[List[float]], Optional[List[str]]]:
+    """Helper function to create nodes and links for Sankey chart. Generic for total or average."""
+    sum_contributions = float(sum(v for v in contributions_data.values() if pd.notna(v)))
     
-    # WESM value for Sankey logic: Based on the sum of scaled generator contributions and the total MQ
-    wesm_value_for_sankey = float(sum_scaled_generator_contributions - total_mq_val)
+    # WESM value for Sankey logic
+    wesm_value_for_sankey = float(sum_contributions - flow_metric_val)
 
-    if sum_scaled_generator_contributions < 0.01 and total_mq_val < 0.01:
-        st.info(f"Insufficient total flow data for Sankey: {chart_title_suffix}")
-        return None
+    if sum_contributions < 0.01 and flow_metric_val < 0.01:
+        return None, None, None, None, None, None # Not enough data
 
     sankey_node_labels: List[str] = []
     node_indices: Dict[str, int] = {}
     sankey_sources_indices: List[int] = []
     sankey_targets_indices: List[int] = []
     sankey_values: List[float] = []
+    node_colors_list: List[str] = [] # Renamed to avoid conflict
     
     COLOR_PALETTE = {
         "junction": "#E69F00", "generator": "#0072B2", "wesm_import": "#009E73",
         "load": "#D55E00", "wesm_export": "#CC79A7"
     }
-    node_colors: List[str] = []
     
     def add_node(label: str, color: str) -> int:
         if label not in node_indices:
             node_indices[label] = len(sankey_node_labels)
             sankey_node_labels.append(label)
-            node_colors.append(color)
+            node_colors_list.append(color)
         return node_indices[label]
 
-    total_flow_through_junction = float(sum_scaled_generator_contributions)
+    total_flow_through_junction = float(sum_contributions)
     if wesm_value_for_sankey < 0: 
         total_flow_through_junction += float(abs(wesm_value_for_sankey))
     
-    junction_node_label = f"Total Supply ({total_flow_through_junction:,.0f} kWh)"
+    junction_node_label = f"{junction_label_prefix} ({total_flow_through_junction:,.0f} kWh)"
     junction_node_idx = add_node(junction_node_label, COLOR_PALETTE["junction"])
 
-    for short_name, value in scaled_generator_contributions_total.items():
+    for short_name, value in contributions_data.items():
         value = float(value)
         if value > 0.01: 
-            percentage = (value / sum_scaled_generator_contributions * 100) if sum_scaled_generator_contributions > 0 else 0
+            percentage = (value / sum_contributions * 100) if sum_contributions > 0 else 0
             gen_node_label = f"{short_name} ({value:,.0f} kWh, {percentage:.1f}%)"
             gen_node_idx = add_node(gen_node_label, COLOR_PALETTE["generator"])
             sankey_sources_indices.append(gen_node_idx)
@@ -310,12 +316,12 @@ def create_sankey_chart_total(
             sankey_targets_indices.append(junction_node_idx)
             sankey_values.append(import_value)
 
-    sum_destination_consumptions = float(sum(v for v in destination_consumptions_total.values() if pd.notna(v) and v > 0.01))
+    sum_destination_consumptions = float(sum(v for v in consumption_data.values() if pd.notna(v) and v > 0.01))
     if sum_destination_consumptions > 0.01: 
-        for short_name, value in destination_consumptions_total.items():
+        for short_name, value in consumption_data.items():
             value = float(value)
             if value > 0.01:
-                percentage = (value / total_mq_val * 100) if total_mq_val > 0 else 0
+                percentage = (value / flow_metric_val * 100) if flow_metric_val > 0 else 0
                 dest_node_label = f"{short_name} ({value:,.0f} kWh, {percentage:.1f}%)"
                 dest_node_idx = add_node(dest_node_label, COLOR_PALETTE["load"])
                 sankey_sources_indices.append(junction_node_idx)
@@ -333,21 +339,20 @@ def create_sankey_chart_total(
             sankey_values.append(export_value)
             
     if not sankey_values or sum(sankey_values) < 0.1: 
-        st.info(f"Insufficient total energy flow data to build Sankey for {chart_title_suffix}")
-        return None
+        return None, None, None, None, None, None
     
-    sankey_values = [float(val) for val in sankey_values]
-    
-    full_sankey_title = f"Total Energy Flow (Sum of Range: {chart_title_suffix})"
+    return sankey_node_labels, node_indices, sankey_sources_indices, sankey_targets_indices, [float(v) for v in sankey_values], node_colors_list
 
+
+def create_sankey_figure(title: str, node_labels, sources, targets, values, node_colors) -> go.Figure:
+    """Helper to create the Plotly Sankey figure object."""
     fig = go.Figure(data=[go.Sankey(
         arrangement="snap", 
-        node=dict(pad=20, thickness=15, line=dict(color="#A9A9A9", width=0.5), label=sankey_node_labels, color=node_colors),
-        link=dict(source=sankey_sources_indices, target=sankey_targets_indices, value=sankey_values, hovertemplate='%{source.label} → %{target.label}: %{value:,.0f} kWh<extra></extra>')
+        node=dict(pad=20, thickness=15, line=dict(color="#A9A9A9", width=0.5), label=node_labels, color=node_colors),
+        link=dict(source=sources, target=targets, value=values, hovertemplate='%{source.label} → %{target.label}: %{value:,.0f} kWh<extra></extra>')
     )])
-    
     fig.update_layout(
-        title=dict(text=full_sankey_title, font=dict(size=16)),
+        title=dict(text=title, font=dict(size=16)),
         font=dict(family="Arial, sans-serif", size=12), 
         plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
         height=600, margin=dict(l=20, r=20, t=50, b=20) 
@@ -356,7 +361,7 @@ def create_sankey_chart_total(
 
 def app_content():
     """Main function to render the Streamlit application content."""
-    st.title("📊 Energy Trading Dashboard (Averages & Totals)") # Updated title
+    st.title("📊 Energy Trading Dashboard") 
     st.sidebar.header("Navigation")
     page_options = ["Dashboard", "About"]
     if 'current_page' not in st.session_state: st.session_state.current_page = "Dashboard"
@@ -425,7 +430,7 @@ def show_dashboard():
             st.session_state.selected_days_of_week = days_options 
         
         selected_days = st.multiselect(
-            "Filter by Day of the Week (metrics will be based on these days):", # Updated help text
+            "Filter by Day of the Week (metrics will be based on these days):", 
             options=days_options,
             default=st.session_state.selected_days_of_week,
             key="day_of_week_filter"
@@ -441,50 +446,65 @@ def show_dashboard():
         day_of_week_map_int = {day_name: i for i, day_name in enumerate(days_options)}
         selected_day_indices = [day_of_week_map_int[day_name] for day_name in st.session_state.selected_days_of_week]
         
-        data_for_period = raw_range_data[raw_range_data[COL_DATE].dt.dayofweek.isin(selected_day_indices)].copy() # Renamed for clarity
+        data_for_period = raw_range_data[raw_range_data[COL_DATE].dt.dayofweek.isin(selected_day_indices)].copy() 
         
         if data_for_period.empty:
             st.warning(f"No data found for the selected days of the week ({', '.join(st.session_state.selected_days_of_week)}) within the chosen date range.")
             return
 
-        # --- KPIs: Average Daily Summary Metrics (still averages for these top-level KPIs) ---
-        st.subheader(f"Average Daily Summary Metrics (Range: {start_date_obj.strftime('%b %d, %Y')} to {end_date_obj.strftime('%b %d, %Y')} for {', '.join(st.session_state.selected_days_of_week)})")
-        # Using 4 columns for the top KPIs as originally designed.
-        # If a different layout (e.g. 2x2) is desired, this part needs specific instructions.
-        col1, col2, col3, col4 = st.columns(4) 
+        # --- KPIs: Only Avg Daily Avg Price, Avg Daily Min Price, Avg Daily Max MQ ---
+        # The "Avg Daily Max Price" is moved to the Summary tab.
+        # The subheader for this section is removed.
+        
+        # Layout for remaining top-level KPIs
+        # Using 3 columns for the remaining top KPIs.
+        kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
         
         daily_grouped = data_for_period.groupby(data_for_period[COL_DATE].dt.date)
 
         if COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]):
-            avg_daily_max_price = float(daily_grouped[COL_PRICES].max().mean(skipna=True) or 0)
             avg_daily_avg_price = float(daily_grouped[COL_PRICES].mean().mean(skipna=True) or 0)
             avg_daily_min_price = float(daily_grouped[COL_PRICES].min().mean(skipna=True) or 0)
             
-            col1.metric("Avg Daily Max Price", f"{avg_daily_max_price:,.2f} PHP/kWh" if pd.notna(avg_daily_max_price) and avg_daily_max_price != 0 else "N/A")
-            col2.metric("Avg Daily Avg Price", f"{avg_daily_avg_price:,.2f} PHP/kWh" if pd.notna(avg_daily_avg_price) and avg_daily_avg_price != 0 else "N/A")
-            col3.metric("Avg Daily Min Price", f"{avg_daily_min_price:,.2f} PHP/kWh" if pd.notna(avg_daily_min_price) and avg_daily_min_price != 0 else "N/A")
+            kpi_col1.metric("Avg Daily Avg Price", f"{avg_daily_avg_price:,.2f} PHP/kWh" if pd.notna(avg_daily_avg_price) and avg_daily_avg_price != 0 else "N/A")
+            kpi_col2.metric("Avg Daily Min Price", f"{avg_daily_min_price:,.2f} PHP/kWh" if pd.notna(avg_daily_min_price) and avg_daily_min_price != 0 else "N/A")
         else:
-            with col1: st.metric(label="Price N/A", value="-")
-            with col2: st.metric(label="Price N/A", value="-")
-            with col3: st.metric(label="Price N/A", value="-")
+            with kpi_col1: st.metric(label="Avg Price N/A", value="-")
+            with kpi_col2: st.metric(label="Min Price N/A", value="-")
 
         if COL_TOTAL_MQ in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_TOTAL_MQ]):
             avg_of_daily_max_mq = float(daily_grouped[COL_TOTAL_MQ].max().mean(skipna=True) or 0)
-            col4.metric("Avg Daily Max Total MQ", f"{avg_of_daily_max_mq:,.0f} kWh" if pd.notna(avg_of_daily_max_mq) and avg_of_daily_max_mq != 0 else "N/A", help="Average of the maximum Total MQ recorded each selected day.")
+            kpi_col3.metric("Avg Daily Max Total MQ", f"{avg_of_daily_max_mq:,.0f} kWh" if pd.notna(avg_of_daily_max_mq) and avg_of_daily_max_mq != 0 else "N/A", help="Average of the maximum Total MQ recorded each selected day.")
         else:
-            with col4: st.metric("Avg Daily Max MQ", "N/A", "MQ N/A")
+            with kpi_col3: st.metric("Avg Max MQ N/A", "N/A")
 
-        # --- Data Tables and Summaries in Tabs ---
+
+        # --- Data Overview for Selected Period (Tabs) ---
         st.subheader("Data Overview for Selected Period")
-        # Renamed tabs and reordered
-        tbl_tabs = st.tabs(["Summary (Totals & Overall Avg)", "Average Hourly Data"]) 
+        # Tab order: 1. Summary, 2. Average Hourly Data, 3. Hourly Data (Selected Range)
+        tbl_tabs = st.tabs(["Summary (Totals & Period Averages)", "Average Hourly Data", "Hourly Data (Selected Range)"]) 
         
-        with tbl_tabs[0]: # Renamed to "Summary" and now the first tab
+        with tbl_tabs[0]: # "Summary" tab
             s_dict = {} 
+            
+            # Avg Daily Max Price (moved here)
+            if COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]):
+                avg_daily_max_price = float(daily_grouped[COL_PRICES].max().mean(skipna=True) or 0)
+                s_dict["Avg Daily Max Price (PHP/kWh)"] = f"{avg_daily_max_price:,.2f}" if pd.notna(avg_daily_max_price) and avg_daily_max_price != 0 else "N/A"
+            else:
+                 s_dict["Avg Daily Max Price (PHP/kWh)"] = "N/A (Data Missing)"
+
+            # Max Hourly Total BCQ for the range
+            if COL_TOTAL_BCQ in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_TOTAL_BCQ]):
+                max_hourly_bcq = float(data_for_period[COL_TOTAL_BCQ].max(skipna=True) or 0)
+                s_dict["Max Hourly Total BCQ (kWh)"] = f"{max_hourly_bcq:,.0f}" if pd.notna(max_hourly_bcq) and max_hourly_bcq !=0 else "N/A"
+            else:
+                s_dict["Max Hourly Total BCQ (kWh)"] = "N/A (Data Missing)"
+
+
             for c in [COL_TOTAL_MQ, COL_TOTAL_BCQ, COL_WESM]:
                 if c in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[c]):
                     try:
-                        # Calculate TOTAL SUM for the entire selected period and days
                         total_sum_for_period_kwh = float(data_for_period[c].sum(skipna=True) or 0)
                         
                         if c == COL_TOTAL_MQ:
@@ -492,29 +512,27 @@ def show_dashboard():
                             value_mwh = total_sum_for_period_kwh / 1000
                             display_value = f"{value_mwh:,.3f}" if pd.notna(value_mwh) and value_mwh != 0 else "N/A"
                         elif c == COL_TOTAL_BCQ:
+                            # This is total sum, already handled Max Hourly BCQ above
                             label = "Sum Total BCQ (MWh)" 
                             value_mwh = total_sum_for_period_kwh / 1000 
                             display_value = f"{value_mwh:,.3f}" if pd.notna(value_mwh) and value_mwh != 0 else "N/A" 
-                        elif c == COL_WESM: # Explicitly handle WESM
-                            label = "Total WESM (kWh)" # Changed label
-                            display_value = f"{total_sum_for_period_kwh:,.0f}" if pd.notna(total_sum_for_period_kwh) else "N/A" # WESM can be 0
+                        elif c == COL_WESM: 
+                            label = "Total WESM (kWh)" 
+                            display_value = f"{total_sum_for_period_kwh:,.0f}" if pd.notna(total_sum_for_period_kwh) else "N/A" 
                         
                         s_dict[label] = display_value
                     except Exception as e:
                         st.warning(f"Error calculating total sum for {c}: {e}")
-                        # Fallback labels in case of error
                         if c == COL_TOTAL_MQ: s_dict["Sum Total MQ (MWh)"] = "Error"
                         elif c == COL_TOTAL_BCQ: s_dict["Sum Total BCQ (MWh)"] = "Error"
                         elif c == COL_WESM: s_dict["Total WESM (kWh)"] = "Error"
-                else: # Data missing for the column
+                else: 
                     if c == COL_TOTAL_MQ: s_dict["Sum Total MQ (MWh)"] = "N/A (Data Missing)"
                     elif c == COL_TOTAL_BCQ: s_dict["Sum Total BCQ (MWh)"] = "N/A (Data Missing)"
                     elif c == COL_WESM: s_dict["Total WESM (kWh)"] = "N/A (Data Missing)"
             
-            # Overall Average Price for the period (this remains an average)
             if COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]):
                 try:
-                    # Calculate the average price over the entire 'data_for_period'
                     overall_avg_price = float(data_for_period[COL_PRICES].mean(skipna=True) or 0)
                     s_dict["Overall Avg Price (PHP/kWh)"] = f"{overall_avg_price:,.2f}" if pd.notna(overall_avg_price) and overall_avg_price != 0 else "N/A"
                 except Exception as e:
@@ -525,26 +543,33 @@ def show_dashboard():
 
             if s_dict:
                 num_metrics = len(s_dict)
-                cols_per_row = min(num_metrics, 3) 
+                # Adjust columns dynamically, e.g., max 4 per row for better readability
+                cols_per_row = min(num_metrics, 4) if num_metrics > 0 else 1
                 summary_cols = st.columns(cols_per_row)
                 col_idx = 0
-                for key, value in s_dict.items():
+                # Sort dictionary by keys for consistent order if desired, or keep as is
+                # sorted_s_dict = dict(sorted(s_dict.items()))
+                for key, value in s_dict.items(): # Use s_dict or sorted_s_dict
                     with summary_cols[col_idx % cols_per_row]:
                         st.metric(label=key, value=str(value))
                     col_idx +=1
             else:
                 st.info("No summary data to display for the selected criteria.")
 
-        with tbl_tabs[1]: # "Average Hourly Data" - now the second tab
+        with tbl_tabs[1]: # "Average Hourly Data" 
             if COL_HOUR in data_for_period.columns and not data_for_period[COL_HOUR].isnull().all():
                 try:
-                    data_for_period[COL_HOUR_STR] = data_for_period[COL_HOUR].apply(
-                        lambda x: x.strftime('%H:%M') if pd.notna(x) and isinstance(x, time) else 'N/A'
-                    )
+                    # Ensure COL_HOUR_STR is created if not already
+                    if COL_HOUR_STR not in data_for_period.columns or data_for_period[COL_HOUR_STR].isnull().all():
+                        data_for_period[COL_HOUR_STR] = data_for_period[COL_HOUR].apply(
+                            lambda x: x.strftime('%H:%M') if pd.notna(x) and isinstance(x, time) else 'N/A'
+                        )
+
                     hourly_avg_table_data = data_for_period.groupby(COL_HOUR_STR)[
                         [COL_TOTAL_MQ, COL_TOTAL_BCQ, COL_PRICES, COL_WESM]
                     ].mean().reset_index() 
                     
+                    # Sorting logic (same as before)
                     if 'N/A' in hourly_avg_table_data[COL_HOUR_STR].values:
                         valid_hours_df = hourly_avg_table_data[hourly_avg_table_data[COL_HOUR_STR] != 'N/A'].copy()
                         if not valid_hours_df.empty:
@@ -552,9 +577,10 @@ def show_dashboard():
                              valid_hours_df = valid_hours_df.sort_values('Hour_Sort_Key').drop(columns=['Hour_Sort_Key'])
                         na_hours_df = hourly_avg_table_data[hourly_avg_table_data[COL_HOUR_STR] == 'N/A']
                         hourly_avg_table_data = pd.concat([valid_hours_df, na_hours_df], ignore_index=True)
-                    else:
-                         hourly_avg_table_data['Hour_Sort_Key'] = pd.to_datetime(hourly_avg_table_data[COL_HOUR_STR], format='%H:%M').dt.time
-                         hourly_avg_table_data = hourly_avg_table_data.sort_values('Hour_Sort_Key').drop(columns=['Hour_Sort_Key'])
+                    else: # Assuming all are valid time strings if 'N/A' is not present
+                         hourly_avg_table_data['Hour_Sort_Key'] = pd.to_datetime(hourly_avg_table_data[COL_HOUR_STR], format='%H:%M', errors='coerce').dt.time
+                         hourly_avg_table_data = hourly_avg_table_data.sort_values('Hour_Sort_Key', na_position='last').drop(columns=['Hour_Sort_Key'])
+
 
                     hourly_avg_table_data.rename(columns={COL_HOUR_STR: 'Time (Avg Across Selected Days)'}, inplace=True)
                     
@@ -570,14 +596,35 @@ def show_dashboard():
             else:
                 st.warning("Hour column not available or all null, cannot display hourly average table.")
         
+        with tbl_tabs[2]: # New Tab: "Hourly Data (Selected Range)"
+            st.markdown("This table shows all hourly records for the selected date range and days of the week.")
+            # Display relevant columns from data_for_period
+            # Ensure COL_HOUR_STR is present for display
+            if COL_HOUR_STR not in data_for_period.columns or data_for_period[COL_HOUR_STR].isnull().all():
+                 data_for_period[COL_HOUR_STR] = data_for_period[COL_HOUR].apply(
+                    lambda x: x.strftime('%H:%M') if pd.notna(x) and isinstance(x, time) else 'N/A'
+                )
+            
+            display_cols_raw = [COL_DATE, COL_HOUR_STR, COL_TOTAL_MQ, COL_TOTAL_BCQ, COL_PRICES, COL_WESM]
+            # Filter out columns that might not exist if data fetching failed partially for some
+            display_cols_raw = [col for col in display_cols_raw if col in data_for_period.columns]
+
+            if not data_for_period.empty and display_cols_raw:
+                # Format date for better readability in the table
+                raw_display_df = data_for_period[display_cols_raw].copy()
+                raw_display_df[COL_DATE] = raw_display_df[COL_DATE].dt.strftime('%Y-%m-%d')
+                st.dataframe(raw_display_df.style.format(precision=2, na_rep="N/A"), height=400, use_container_width=True)
+            else:
+                st.info("No raw hourly data to display for the selected criteria.")
+
 
         # --- Average Hourly Metrics Visualization (Charts) ---
         st.subheader("Average Hourly Metrics Visualization")
-        chart_tabs_viz = st.tabs(["Avg MQ, BCQ & Prices by Hour", "Avg WESM & Prices by Hour"]) # Renamed for clarity
+        chart_tabs_viz = st.tabs(["Avg MQ, BCQ & Prices by Hour", "Avg WESM & Prices by Hour"]) 
         
         try:
             if COL_HOUR in data_for_period.columns and not data_for_period[COL_HOUR].isnull().all():
-                if COL_HOUR_STR not in data_for_period.columns: # Ensure Hour_Str is present
+                if COL_HOUR_STR not in data_for_period.columns or data_for_period[COL_HOUR_STR].isnull().all():
                      data_for_period[COL_HOUR_STR] = data_for_period[COL_HOUR].apply(
                         lambda x: x.strftime('%H:%M') if pd.notna(x) and isinstance(x, time) else 'Unknown'
                     )
@@ -588,7 +635,11 @@ def show_dashboard():
                     COL_PRICES: 'mean'
                 }).reset_index()
                 
-                # Sort by hour properly
+                # Add absolute WESM for chart y-axis
+                if COL_WESM in hourly_avg_df_for_charts.columns:
+                    hourly_avg_df_for_charts[COL_ABS_WESM] = hourly_avg_df_for_charts[COL_WESM].abs()
+
+                # Sorting logic (same as before)
                 if 'Unknown' in hourly_avg_df_for_charts[COL_HOUR_STR].values:
                     known_hours_df = hourly_avg_df_for_charts[hourly_avg_df_for_charts[COL_HOUR_STR] != 'Unknown'].copy()
                     if not known_hours_df.empty:
@@ -604,91 +655,122 @@ def show_dashboard():
                     na_hours_df = hourly_avg_df_for_charts[hourly_avg_df_for_charts[COL_HOUR_STR] == 'N/A']
                     hourly_avg_df_for_charts = pd.concat([known_hours_df, na_hours_df], ignore_index=True)   
                 else: 
-                    hourly_avg_df_for_charts['Hour_Sort_Key'] = pd.to_datetime(hourly_avg_df_for_charts[COL_HOUR_STR], format='%H:%M', errors='coerce').dt.time
-                    hourly_avg_df_for_charts = hourly_avg_df_for_charts.sort_values('Hour_Sort_Key').drop(columns=['Hour_Sort_Key'])
+                    if not hourly_avg_df_for_charts.empty: # Ensure not empty before trying to sort
+                        hourly_avg_df_for_charts['Hour_Sort_Key'] = pd.to_datetime(hourly_avg_df_for_charts[COL_HOUR_STR], format='%H:%M', errors='coerce').dt.time
+                        hourly_avg_df_for_charts = hourly_avg_df_for_charts.sort_values('Hour_Sort_Key', na_position='last').drop(columns=['Hour_Sort_Key'])
                 
-                # Chart 1: Avg MQ, BCQ & Prices by Hour
                 with chart_tabs_viz[0]:
                     if all(c in hourly_avg_df_for_charts.columns for c in [COL_HOUR_STR, COL_TOTAL_MQ, COL_TOTAL_BCQ, COL_PRICES]):
-                        base = alt.Chart(hourly_avg_df_for_charts).encode(
-                            x=alt.X(f'{COL_HOUR_STR}:N', title='Hour of Day (Average)', sort=None)
-                        )
-                        
+                        base = alt.Chart(hourly_avg_df_for_charts).encode(x=alt.X(f'{COL_HOUR_STR}:N', title='Hour of Day (Average)', sort=None))
                         line_mq = base.mark_line(point=True, color='steelblue').encode(
                             y=alt.Y(f'{COL_TOTAL_MQ}:Q', title='Avg Energy (kWh)', axis=alt.Axis(titleColor='steelblue'), scale=alt.Scale(zero=True)),
                             tooltip=[COL_HOUR_STR, alt.Tooltip(f'{COL_TOTAL_MQ}:Q', format=',.0f', title='Avg MQ')]
                         )
                         line_bcq = base.mark_line(point=True, color='orange').encode(
-                            y=alt.Y(f'{COL_TOTAL_BCQ}:Q', axis=alt.Axis(titleColor='steelblue'), scale=alt.Scale(zero=True)), # Share MQ/BCQ axis
+                            y=alt.Y(f'{COL_TOTAL_BCQ}:Q', axis=alt.Axis(titleColor='steelblue'), scale=alt.Scale(zero=True)),
                             tooltip=[COL_HOUR_STR, alt.Tooltip(f'{COL_TOTAL_BCQ}:Q', format=',.0f', title='Avg BCQ')]
                         )
                         line_prices = base.mark_line(point=True, color='green', strokeDash=[3,3]).encode(
-                            y=alt.Y(f'{COL_PRICES}:Q', title='Avg Price (PHP/kWh)', axis=alt.Axis(titleColor='green'), scale=alt.Scale(zero=False)), # Prices usually not zero-based
+                            y=alt.Y(f'{COL_PRICES}:Q', title='Avg Price (PHP/kWh)', axis=alt.Axis(titleColor='green'), scale=alt.Scale(zero=False)),
                             tooltip=[COL_HOUR_STR, alt.Tooltip(f'{COL_PRICES}:Q', format=',.2f', title='Avg Price')]
                         )
-                        
-                        # Layer the charts and resolve scales for multiple y-axes
-                        combined_chart_mq_bcq_prices = alt.layer(line_mq + line_bcq, line_prices).resolve_scale(
-                            y='independent'
-                        ).properties(
-                            title=f'Avg Hourly MQ, BCQ & Prices ({", ".join(st.session_state.selected_days_of_week)})',
-                            height=400
+                        combined_chart_mq_bcq_prices = alt.layer(line_mq + line_bcq, line_prices).resolve_scale(y='independent').properties(
+                            title=f'Avg Hourly MQ, BCQ & Prices ({", ".join(st.session_state.selected_days_of_week)})', height=400
                         ).configure_axis(labelAngle=-45)
                         st.altair_chart(combined_chart_mq_bcq_prices, use_container_width=True)
-                    else:
-                        st.warning("Missing data for MQ, BCQ, or Prices chart.")
+                    else: st.warning("Missing data for MQ, BCQ, or Prices chart.")
                 
-                # Chart 2: Avg WESM & Prices by Hour
                 with chart_tabs_viz[1]:
-                    if all(c in hourly_avg_df_for_charts.columns for c in [COL_HOUR_STR, COL_WESM, COL_PRICES]):
-                        base_wesm = alt.Chart(hourly_avg_df_for_charts).encode(
-                            x=alt.X(f'{COL_HOUR_STR}:N', title='Hour of Day (Average)', sort=None)
-                        )
+                    if all(c in hourly_avg_df_for_charts.columns for c in [COL_HOUR_STR, COL_WESM, COL_PRICES, COL_ABS_WESM])):
+                        base_wesm = alt.Chart(hourly_avg_df_for_charts).encode(x=alt.X(f'{COL_HOUR_STR}:N', title='Hour of Day (Average)', sort=None))
                         bar_wesm = base_wesm.mark_bar().encode(
-                            y=alt.Y(f'{COL_WESM}:Q', title='Avg WESM (kWh)', axis=alt.Axis(titleColor='purple')),
-                            color=alt.condition(alt.datum[COL_WESM] > 0, alt.value('#4CAF50'), alt.value('#F44336')),
-                            tooltip=[COL_HOUR_STR, alt.Tooltip(f'{COL_WESM}:Q', format=',.0f', title='Avg WESM')]
+                            y=alt.Y(f'{COL_ABS_WESM}:Q', title='Avg WESM Volume (kWh)', axis=alt.Axis(titleColor='purple')), # Use absolute for y-axis magnitude
+                            color=alt.condition(alt.datum[COL_WESM] > 0, alt.value('#4CAF50'), alt.value('#F44336')), # Color by original WESM sign
+                            tooltip=[COL_HOUR_STR, alt.Tooltip(f'{COL_WESM}:Q', format=',.0f', title='Avg WESM (Net)')]
                         )
                         line_prices_wesm = base_wesm.mark_line(point=True, color='green', strokeDash=[3,3]).encode(
                             y=alt.Y(f'{COL_PRICES}:Q', title='Avg Price (PHP/kWh)', axis=alt.Axis(titleColor='green'), scale=alt.Scale(zero=False)),
                             tooltip=[COL_HOUR_STR, alt.Tooltip(f'{COL_PRICES}:Q', format=',.2f', title='Avg Price')]
                         )
-                        combined_chart_wesm_prices = alt.layer(bar_wesm, line_prices_wesm).resolve_scale(
-                            y='independent'
-                        ).properties(
-                            title=f'Avg Hourly WESM & Prices ({", ".join(st.session_state.selected_days_of_week)})',
-                            height=400
+                        combined_chart_wesm_prices = alt.layer(bar_wesm, line_prices_wesm).resolve_scale(y='independent').properties(
+                            title=f'Avg Hourly WESM Volume & Prices ({", ".join(st.session_state.selected_days_of_week)})', height=400
                         ).configure_axis(labelAngle=-45)
                         st.altair_chart(combined_chart_wesm_prices, use_container_width=True)
                         with st.expander("Understanding WESM Values on Chart"):
-                            st.markdown("- **Positive WESM (Green Bars)**: Net Export.\n- **Negative WESM (Red Bars)**: Net Import.")
-                    else:
-                        st.warning("Missing data for WESM or Prices chart.")
-            else:
-                st.warning("Hour data column not available, cannot generate hourly charts.")
+                            st.markdown("- **Green Bars**: Net Export (BCQ > MQ).\n- **Red Bars**: Net Import (MQ > BCQ).\n- *Bar height represents the volume of WESM interaction.*")
+                    else: st.warning("Missing data for WESM or Prices chart.")
+            else: st.warning("Hour data column not available, cannot generate hourly charts.")
         except Exception as e:
             st.error(f"An error occurred while creating charts: {e}")
-            st.exception(e) # Provides full traceback for debugging
+            st.exception(e)
     
-        # --- Sankey Diagram (TOTAL Energy Flow for the selected period) ---
-        st.subheader("Total Energy Flow Visualization (Sankey Diagram)")
+        # --- Sankey Diagram Visualization ---
+        st.subheader("Energy Flow Visualization (Sankey Diagram)")
         
-        # Calculate total MQ for the entire selected period for Sankey
-        total_mq_for_sankey_period = float(data_for_period[COL_TOTAL_MQ].sum(skipna=True) or 0)
-            
-        sankey_chart_title_suffix = f"{', '.join(st.session_state.selected_days_of_week)} in {start_date_obj.strftime('%b %d')} - {end_date_obj.strftime('%b %d, %Y')}"
-        
-        sankey_fig_total = create_sankey_chart_total(
-            total_mq_val=total_mq_for_sankey_period,
-            chart_title_suffix=sankey_chart_title_suffix,
-            start_date_for_fetch=start_date_str,
-            end_date_for_fetch=end_date_str,
-            days_indices_for_fetch=selected_day_indices
+        sankey_type = st.radio(
+            "Select Sankey Diagram Type:",
+            ('Total Flow (Sum of Range)', 'Average Hourly Flow (Typical Hour)'),
+            key="sankey_type_selector"
         )
-        
-        if sankey_fig_total:
-            st.plotly_chart(sankey_fig_total, use_container_width=True)
-        # else: create_sankey_chart_total will show an st.info message if data is insufficient
+
+        sankey_chart_title_suffix = f"{', '.join(st.session_state.selected_days_of_week)} in {start_date_obj.strftime('%b %d')} - {end_date_obj.strftime('%b %d, %Y')}"
+
+        if sankey_type == 'Total Flow (Sum of Range)':
+            total_mq_for_sankey_period = float(data_for_period[COL_TOTAL_MQ].sum(skipna=True) or 0)
+            sankey_contributions = fetch_sankey_generator_contributions_total(start_date_str, end_date_str, selected_day_indices)
+            sankey_consumptions = fetch_sankey_destination_consumption_total(start_date_str, end_date_str, selected_day_indices)
+            
+            node_labels, _, sources, targets, values, node_colors = create_sankey_nodes_links(
+                sankey_contributions, sankey_consumptions, total_mq_for_sankey_period, "Total Supply"
+            )
+            if node_labels:
+                fig_title = f"Total Energy Flow (Sum of Range: {sankey_chart_title_suffix})"
+                sankey_fig = create_sankey_figure(fig_title, node_labels, sources, targets, values, node_colors)
+                st.plotly_chart(sankey_fig, use_container_width=True)
+            else:
+                st.info(f"Insufficient data to create Total Sankey diagram for {sankey_chart_title_suffix}")
+
+        elif sankey_type == 'Average Hourly Flow (Typical Hour)':
+            if COL_HOUR in data_for_period.columns and not data_for_period[COL_HOUR].isnull().all():
+                unique_hours_for_sankey = sorted(
+                    [h.strftime('%H:%M') for h in data_for_period[COL_HOUR].dropna().unique() if isinstance(h, time)]
+                )
+                if unique_hours_for_sankey:
+                    default_sankey_hour = '14:00' if '14:00' in unique_hours_for_sankey else unique_hours_for_sankey[0]
+                    selected_sankey_hour_str = st.selectbox(
+                        "Select hour for average energy flow visualization:", 
+                        options=unique_hours_for_sankey,
+                        index=unique_hours_for_sankey.index(default_sankey_hour) if default_sankey_hour in unique_hours_for_sankey else 0,
+                        key="avg_sankey_hour_selector"
+                    )
+                    
+                    # Filter data for the selected hour to get average MQ for that specific hour
+                    sankey_interval_data = data_for_period[data_for_period[COL_HOUR].apply(
+                        lambda x: x.strftime('%H:%M') if isinstance(x, time) else '' 
+                    ) == selected_sankey_hour_str]
+                    
+                    if not sankey_interval_data.empty:
+                        avg_mq_for_sankey_interval = float(sankey_interval_data[COL_TOTAL_MQ].mean(skipna=True) or 0)
+                        
+                        interval_time_db_format = selected_sankey_hour_str + ":00"
+                        sankey_contributions_avg = fetch_sankey_generator_contributions_averaged(start_date_str, end_date_str, selected_day_indices, interval_time_db_format)
+                        sankey_consumptions_avg = fetch_sankey_destination_consumption_averaged(start_date_str, end_date_str, selected_day_indices, interval_time_db_format)
+
+                        node_labels, _, sources, targets, values, node_colors = create_sankey_nodes_links(
+                            sankey_contributions_avg, sankey_consumptions_avg, avg_mq_for_sankey_interval, f"Avg Supply at {selected_sankey_hour_str}"
+                        )
+                        if node_labels:
+                            fig_title = f"Avg Hourly Energy Flow at {selected_sankey_hour_str} (Range: {sankey_chart_title_suffix})"
+                            sankey_fig = create_sankey_figure(fig_title, node_labels, sources, targets, values, node_colors)
+                            st.plotly_chart(sankey_fig, use_container_width=True)
+                        else:
+                             st.info(f"Insufficient data to create Average Hourly Sankey for {selected_sankey_hour_str} in {sankey_chart_title_suffix}")
+                    else:
+                        st.warning(f"No data for hour {selected_sankey_hour_str} in the selected period.")
+                else:
+                    st.warning("No valid hours with data for Average Hourly Sankey.")
+            else:
+                st.warning("Hour data not available for Average Hourly Sankey.")
 
 
 def show_about_page():
@@ -696,13 +778,14 @@ def show_about_page():
     st.title("About this Dashboard")
     
     st.markdown("""
-    ## Energy Trading Dashboard (Averages & Totals)
+    ## Energy Trading Dashboard
     
     This interactive dashboard is designed for the analysis and visualization of energy trading data. It presents:
-    - **Average daily metrics** for top-level KPIs.
-    - **Total sums** for MQ, BCQ, and WESM over the selected period in the 'Summary' tab.
+    - **Average daily metrics** for key performance indicators (KPIs).
+    - **Period totals and overall averages** in the 'Summary' tab.
     - **Average hourly trends** for MQ, BCQ, WESM, and Prices.
-    - A **total energy flow Sankey diagram** summarizing the entire selected period.
+    - **Raw hourly data** for the selected period.
+    - An **Energy Flow Sankey diagram** visualizing either the total flow for the selected period or the average flow for a typical hour.
     
     ### Key Features:
     
@@ -711,40 +794,40 @@ def show_about_page():
         * Filter by specific days of the week. 
        
     2.  **Insightful KPIs & Summaries:**
-        * **Average Daily Metrics:** Max/Avg/Min Price, Max Total MQ.
-        * **Period Totals (Summary Tab):** Sum Total MQ (MWh), Sum Total BCQ (MWh), Total WESM (kWh), and Overall Average Price for the selected period.
+        * **Top-Level KPIs:** Average Daily Average Price, Average Daily Minimum Price, Average Daily Maximum Total MQ.
+        * **Summary Tab:** Average Daily Maximum Price, Maximum Hourly Total BCQ (for the period), Sum Total MQ (MWh), Sum Total BCQ (MWh), Total WESM (kWh), and Overall Average Price for the selected period.
         
     3.  **Detailed Data Tables:**
         * **Average Hourly Data:** Mean values for MQ, BCQ, Prices, WESM for each hour, averaged over selected days/range.
+        * **Hourly Data (Selected Range):** All individual hourly records for the selected date range and days of the week.
         
     4.  **Dynamic Visualizations:**
-        * **Average Hourly Charts:** Combined line charts for MQ, BCQ, and Prices; and WESM (bars) with Prices, both featuring dual y-axes.
-        * **Total Energy Flow Sankey Diagram:** Visualizes the aggregate flow of energy over the entire selected date range and days, showing total contributions from generation sources, how this energy meets the total metered demand (MQ), and the net WESM interaction.
+        * **Average Hourly Charts:** Combined line charts for MQ, BCQ, and Prices; and WESM (bars, showing volume) with Prices, both featuring dual y-axes.
+        * **Energy Flow Sankey Diagram:** User can choose to view:
+            * **Total Flow:** Aggregate flow of energy over the entire selected date range and days.
+            * **Average Hourly Flow:** Typical flow for a user-selected hour, averaged across the selected period.
        
     ### Key Terms:
-    (Definitions remain the same)
     * **MQ (Metered Quantity):** kWh.
     * **BCQ (Bilateral Contract Quantity):** kWh.
     * **WESM (Wholesale Electricity Spot Market)**
     * **WESM (Calculated) = Total BCQ - Total MQ**
     
-    ### Understanding the Sankey Diagram (Total Flow):
+    ### Understanding the Sankey Diagram:
     
-    The Sankey diagram now illustrates the **total** energy distribution for the entire selected period (filtered by days of the week):
-    * **Sources (Left):** Total contribution from various generators and WESM Imports over the period.
-    * **Junction Node (Center):** Total energy supplied to meet demand over the period.
-    * **Destinations (Right):** Total consumption by different load points and WESM Exports over the period.
+    * **Total Flow Sankey:** Illustrates the **total** energy distribution for the entire selected period (filtered by days of the week).
+    * **Average Hourly Flow Sankey:** Illustrates the **average** energy distribution for a specific hour, averaged over the selected period.
+    * **Components:** Sources (Generators, WESM Import), Junction (Supply), Destinations (Loads, WESM Export).
     
     ### Data Sources:
-    (Data sources remain the same)
-    * `MQ_Hourly`, `BCQ_Hourly`, `Prices_Hourly`
+    * `MQ_Hourly`, `BCQ_Hourly`, `Prices_Hourly` from a PostgreSQL database.
     
     ### Note on Metrics:
-    Top-level KPIs and hourly charts show **averages**. The 'Summary' tab and the main Sankey diagram show **totals** for the selected period.
+    Pay attention to whether a metric is an **average** (e.g., top-level KPIs, hourly charts) or a **total** (e.g., 'Summary' tab figures, Total Flow Sankey).
     """)
     
     st.sidebar.markdown("---")
-    st.sidebar.info("Dashboard Version: 1.3.0\nLast Updated: May 18, 2025") # Updated version
+    st.sidebar.info("Dashboard Version: 1.4.0\nLast Updated: May 18, 2025") 
 
 # --- MAIN APP EXECUTION ---
 if __name__ == "__main__":
