@@ -532,20 +532,19 @@ def show_dashboard():
                 if c in data_for_averaging.columns and pd.api.types.is_numeric_dtype(data_for_averaging[c]):
                     try:
                         # Corrected calculation: sum daily totals, then average those daily sums
-                        daily_sum_kwh = float(daily_grouped[c].sum() or 0)
                         avg_daily_sum_kwh = float(daily_grouped[c].sum().mean(skipna=True) or 0)
                         
                         if c == COL_TOTAL_MQ:
                             label = "Sum Total MQ (MWh)"
-                            value_mwh = daily_sum_kwh / 1000
+                            value_mwh = avg_daily_sum_kwh / 1000
                             display_value = f"{value_mwh:,.3f}" if pd.notna(value_mwh) and value_mwh != 0 else "N/A"
                         elif c == COL_TOTAL_BCQ:
                             label = "Sum Total BCQ (MWh)" # Corrected label
-                            value_mwh = daily_sum_kwh / 1000 # Corrected unit conversion
+                            value_mwh = avg_daily_sum_kwh / 1000 # Corrected unit conversion
                             display_value = f"{value_mwh:,.3f}" if pd.notna(value_mwh) and value_mwh != 0 else "N/A" # Corrected formatting
                         else: # For WESM
-                            label = f"WESM Sum {c.replace('_', ' ')} (kWh)"
-                            display_value = f"{daily_sum_kwh:,.0f}" if pd.notna(daily_sum_kwh) and daily_sum_kwh != 0 else "N/A"
+                            label = f"Avg Daily Sum {c.replace('_', ' ')} (kWh)"
+                            display_value = f"{avg_daily_sum_kwh:,.0f}" if pd.notna(avg_daily_sum_kwh) and avg_daily_sum_kwh != 0 else "N/A"
                         
                         s_dict[label] = display_value
                     except Exception as e:
