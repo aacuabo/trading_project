@@ -460,7 +460,7 @@ def show_dashboard():
         # Using 3 columns for the remaining top KPIs.
        # kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
         
-        #daily_grouped = data_for_period.groupby(data_for_period[COL_DATE].dt.date)
+        daily_grouped = data_for_period.groupby(data_for_period[COL_DATE].dt.date)
 
       #  if COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]):
       #      avg_daily_avg_price = float(daily_grouped[COL_PRICES].mean().mean(skipna=True) or 0)
