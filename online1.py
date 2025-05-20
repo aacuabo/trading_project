@@ -486,8 +486,17 @@ def show_dashboard():
         
 tbl_tabs = st.tabs(["Summary", "Hourly Average Data", "Hourly Sankey"])
 
+# Remove this line as it's duplicated
+# tbl_tabs = st.tabs(["Summary", "Hourly Average Data", "Hourly Sankey"])
+
+# Earlier in the code there's already a tab definition:
+# tbl_tabs = st.tabs(["Summary", "Average Hourly Data", "Hourly Data (Selected Range)"])
+
         with tbl_tabs[0]:  # "Summary" tab
             s_dict = {}
+            
+            # Create daily_grouped if not already created
+            daily_grouped = data_for_period.groupby(data_for_period[COL_DATE].dt.date)
 
             # Avg Daily Max Price (moved here)
             if COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]):
@@ -561,6 +570,7 @@ tbl_tabs = st.tabs(["Summary", "Hourly Average Data", "Hourly Sankey"])
                     col_idx += 1
             else:
                 st.info("No summary data to display for the selected criteria.")
+                
         with tbl_tabs[1]: # "Average Hourly Data" 
             if COL_HOUR in data_for_period.columns and not data_for_period[COL_HOUR].isnull().all():
                 try:
