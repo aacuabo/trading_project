@@ -592,15 +592,15 @@ def show_dashboard():
                     else:
                         st.metric(label="Overall Avg Price (PHP/kWh)", value="N/A")
                         
-                with row2_col3:
+                with row2_col2:
                     if "Avg Daily Max Price (PHP/kWh)" in s_dict:
                         st.metric(label="Avg Daily Max Price (PHP/kWh)", value=str(s_dict["Avg Daily Max Price (PHP/kWh)"]))
                     else:
                         st.metric(label="Avg Daily Max Price (PHP/kWh)", value="N/A")
                         
-                with row2_col2:
-                    col2_container = st.container()
-                    col2_container.metric(
+                with row2_col3:
+                    col3_container = st.container()
+                    col3_container.metric(
                         label="Max Hourly Total MQ (kWh)", 
                         value=str(s_dict["Max Hourly Total MQ (kWh)"])
                     )
