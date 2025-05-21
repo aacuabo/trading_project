@@ -359,6 +359,31 @@ def create_sankey_figure(title: str, node_labels, sources, targets, values, node
     )
     return fig
 
+kpi_alignment_css = """
+<style>
+    [data-testid="stMetricValue"] {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    [data-testid="stMetricLabel"] {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    [data-testid="stMetric"] {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        margin: auto;
+    }
+</style>
+"""
+st.markdown(kpi_alignment_css, unsafe_allow_html=True)
+
+
 def app_content():
     """Main function to render the Streamlit application content."""
     st.title("📊 Energy Trading Dashboard") 
@@ -567,22 +592,22 @@ def show_dashboard():
                 # First row - specific order as requested:
                 # Sum Total MQ, Sum Total BCQ, Total WESM
                 with row1_col1:
-                    st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)    
+                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True) 
                     if "Sum Total MQ (MWh)" in s_dict:
-                        st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)  
+                        st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True) 
                         st.metric(label="Sum Total MQ (MWh)", value=str(s_dict["Sum Total MQ (MWh)"]))
                     else:
                         st.metric(label="Sum Total MQ (MWh)", value="N/A")
                         
                 with row1_col2:
-                    st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)
+                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                     if "Sum Total BCQ (MWh)" in s_dict:
                         st.metric(label="Sum Total BCQ (MWh)", value=str(s_dict["Sum Total BCQ (MWh)"]))
                     else:
                         st.metric(label="Sum Total BCQ (MWh)", value="N/A")
                         
                 with row1_col3:
-                    st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)
+                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                     if "Total WESM (kWh)" in s_dict:
                         st.metric(label="Total WESM (kWh)", value=str(s_dict["Total WESM (kWh)"]))
                     else:
@@ -591,13 +616,13 @@ def show_dashboard():
                 # Second row - specific order as requested:
                 # Overall Avg Price, Avg Daily Max Price, Max Hourly Total BCQ
                 with row2_col1:
-                    st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)
+                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                     if "Overall Avg Price (PHP/kWh)" in s_dict:
                         st.metric(label="Overall Avg Price (PHP/kWh)", value=str(s_dict["Overall Avg Price (PHP/kWh)"]))
                     else:
                         st.metric(label="Overall Avg Price (PHP/kWh)", value="N/A")
                 with row2_col2:
-                    st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)
+                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                     col2_container = st.container()
                     col2_container.metric(
                         label="Max Hourly Total MQ (kWh)", 
@@ -608,7 +633,7 @@ def show_dashboard():
 
                         
                 with row2_col3:
-                    st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)
+                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                     if "Avg Daily Max Price (PHP/kWh)" in s_dict:
                         st.metric(label="Avg Daily Max Price (PHP/kWh)", value=str(s_dict["Avg Daily Max Price (PHP/kWh)"]))
                     else:
