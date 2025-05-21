@@ -496,7 +496,7 @@ def show_dashboard():
             else:
                 s_dict["Avg Daily Max Price (PHP/kWh)"] = "N/A (Data Missing)"
 
-            # Max Hourly Total BCQ for the range
+            # Max Hourly Total MQ for the range
             if COL_TOTAL_MQ in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_TOTAL_MQ]):
                 max_hourly_mq = float(data_for_period[COL_TOTAL_MQ].max(skipna=True) or 0)
                 s_dict["Max Hourly Total MQ (kWh)"] = f"{max_hourly_mq:,.0f}" if pd.notna(max_hourly_mq) and max_hourly_mq !=0 else "N/A"
@@ -586,10 +586,10 @@ def show_dashboard():
                         st.metric(label="Avg Daily Max Price (PHP/kWh)", value="N/A")
                         
                 with row2_col3:
-                    if "Max Hourly Total BCQ (kWh)" in s_dict:
-                        st.metric(label="Max Hourly Total BCQ (kWh)", value=str(s_dict["Max Hourly Total BCQ (kWh)"]))
+                    if "Max Hourly Total MQ (kWh)" in s_dict:
+                        st.metric(label="Max Hourly Total MQ (kWh)", value=str(s_dict["Max Hourly Total MQ (kWh)"]))
                     else:
-                        st.metric(label="Max Hourly Total BCQ (kWh)", value="N/A")
+                        st.metric(label="Max Hourly Total MQ (kWh)", value="N/A")
             else:
                 st.info("No summary data to display for the selected criteria.")
                 
