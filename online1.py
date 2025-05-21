@@ -497,11 +497,11 @@ def show_dashboard():
                 s_dict["Avg Daily Max Price (PHP/kWh)"] = "N/A (Data Missing)"
 
             # Max Hourly Total BCQ for the range
-            if COL_TOTAL_BCQ in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_TOTAL_BCQ]):
-                max_hourly_bcq = float(data_for_period[COL_TOTAL_BCQ].max(skipna=True) or 0)
-                s_dict["Max Hourly Total BCQ (kWh)"] = f"{max_hourly_bcq:,.0f}" if pd.notna(max_hourly_bcq) and max_hourly_bcq !=0 else "N/A"
+            if COL_TOTAL_MQ in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_TOTAL_MQ]):
+                max_hourly_mq = float(data_for_period[COL_TOTAL_MQ].max(skipna=True) or 0)
+                s_dict["Max Hourly Total MQ (kWh)"] = f"{max_hourly_mq:,.0f}" if pd.notna(max_hourly_mq) and max_hourly_mq !=0 else "N/A"
             else:
-                s_dict["Max Hourly Total BCQ (kWh)"] = "N/A (Data Missing)"
+                s_dict["Max Hourly Total MQ (kWh)"] = "N/A (Data Missing)"
 
 
             for c in [COL_TOTAL_MQ, COL_TOTAL_BCQ, COL_WESM]:
