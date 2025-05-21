@@ -503,6 +503,19 @@ def show_dashboard():
             else:
                 s_dict["Max Hourly Total MQ (kWh)"] = "N/A (Data Missing)"
 
+            if COL_TOTAL_MQ in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_TOTAL_MQ]):
+                # Find the maximum MQ and its corresponding date/time
+                max_hourly_mq = float(data_for_period[COL_TOTAL_MQ].max(skipna=True) or 0)
+                max_mq_row = data_for_period.loc[data_for_period[COL_TOTAL_MQ] == max_hourly_mq].iloc[0]
+                max_mq_date = max_mq_row[COL_DATE].strftime('%Y-%m-%d')
+                max_mq_time = max_mq_row[COL_HOUR].strftime('%H:%M') if isinstance(max_mq_row[COL_HOUR], time) else 'N/A'
+                
+                s_dict["Max Hourly Total MQ (kWh)"] = f"{max_hourly_mq:,.0f}" if pd.notna(max_hourly_mq) and max_hourly_mq != 0 else "N/A"
+                s_dict["Max MQ Date/Time"] = f"{max_mq_date} {max_mq_time}" if max_hourly_mq != 0 else "N/A"
+            else:
+                s_dict["Max Hourly Total MQ (kWh)"] = "N/A (Data Missing)"
+                s_dict["Max MQ Date/Time"] = "N/A"
+
 
             for c in [COL_TOTAL_MQ, COL_TOTAL_BCQ, COL_WESM]:
                 if c in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[c]):
@@ -586,10 +599,13 @@ def show_dashboard():
                         st.metric(label="Avg Daily Max Price (PHP/kWh)", value="N/A")
                         
                 with row2_col3:
-                    if "Max Hourly Total MQ (kWh)" in s_dict:
-                        st.metric(label="Max Hourly Total MQ (kWh)", value=str(s_dict["Max Hourly Total MQ (kWh)"]))
-                    else:
-                        st.metric(label="Max Hourly Total MQ (kWh)", value="N/A")
+                    col3_container = st.container()
+                    col3_container.metric(
+                        label="Max Hourly Total MQ (kWh)", 
+                        value=str(s_dict["Max Hourly Total MQ (kWh)"])
+                    )
+                    if s_dict["Max MQ Date/Time"] != "N/A":
+                        col3_container.caption(f"on {s_dict['Max MQ Date/Time']}")
             else:
                 st.info("No summary data to display for the selected criteria.")
                 
