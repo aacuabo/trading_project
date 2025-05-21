@@ -627,8 +627,9 @@ def show_dashboard():
                         label="Max Hourly Total MQ (kWh)", 
                         value=str(s_dict["Max Hourly Total MQ (kWh)"])
                     )
-                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
+                    
                     if s_dict["Max MQ Date/Time"] != "N/A":
+                        st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                         col2_container.caption(f"on {s_dict['Max MQ Date/Time']}")
 
                         
