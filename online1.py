@@ -707,7 +707,7 @@ def show_dashboard():
                             y=alt.Y(f'{COL_TOTAL_BCQ}:Q', axis=alt.Axis(titleColor='steelblue'), scale=alt.Scale(zero=True)),
                             tooltip=[COL_HOUR_STR, alt.Tooltip(f'{COL_TOTAL_BCQ}:Q', format=',.0f', title='Avg BCQ')]
                         )
-                        line_prices = base.mark_line(point=True, color='green', strokeDash=[3,3]).encode(
+                        line_prices = base.mark_bar(color='green', opacity=0.3).encode(
                             y=alt.Y(f'{COL_PRICES}:Q', title='Avg Price (PHP/kWh)', axis=alt.Axis(titleColor='green'), scale=alt.Scale(zero=False)),
                             tooltip=[COL_HOUR_STR, alt.Tooltip(f'{COL_PRICES}:Q', format=',.2f', title='Avg Price')]
                         )
