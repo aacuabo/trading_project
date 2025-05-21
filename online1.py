@@ -569,6 +569,7 @@ def show_dashboard():
                 with row1_col1:
                     st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)    
                     if "Sum Total MQ (MWh)" in s_dict:
+                        st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)  
                         st.metric(label="Sum Total MQ (MWh)", value=str(s_dict["Sum Total MQ (MWh)"]))
                     else:
                         st.metric(label="Sum Total MQ (MWh)", value="N/A")
