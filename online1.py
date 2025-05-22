@@ -774,7 +774,7 @@ def show_dashboard():
                     # Corrected the condition for the WESM chart
                     if all(c in hourly_avg_df_for_charts.columns for c in [COL_HOUR_STR, COL_WESM, COL_PRICES, COL_ABS_WESM]):
                         base_wesm = alt.Chart(hourly_avg_df_for_charts).encode(x=alt.X(f'{COL_HOUR_STR}:N', title='Hour of Day (Average)', sort=None))
-                        bar_wesm = base_wesm.mark_bar().encode(
+                        bar_wesm = base_wesm.mark_bar(opacity=0.3).encode(
                             y=alt.Y(f'{COL_ABS_WESM}:Q', title='Avg WESM Volume (kWh)', axis=alt.Axis(titleColor='purple')), # Use absolute for y-axis magnitude
                             color=alt.condition(alt.datum[COL_WESM] > 0, alt.value('#4CAF50'), alt.value('#F44336')), # Color by original WESM sign
                             tooltip=[COL_HOUR_STR, alt.Tooltip(f'{COL_WESM}:Q', format=',.0f', title='Avg WESM (Net)')]
