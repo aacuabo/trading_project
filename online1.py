@@ -629,8 +629,10 @@ def show_dashboard():
                     )
                     st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                     if s_dict["Max MQ Date/Time"] != "N/A":
-                        st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
-                        col2_container.caption(f"on {s_dict['Max MQ Date/Time']}")
+                        col2_container.markdown(
+                                    f"<div style='text-align: center;'><span style='color: gray;'>on {s_dict['Max MQ Date/Time']}</span></div>",
+                                    unsafe_allow_html=True
+                                )
 
                         
                 with row2_col3:
