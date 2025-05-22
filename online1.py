@@ -798,12 +798,12 @@ def show_dashboard():
         st.subheader("Energy Flow Visualization")
         
         # Combine both options into a single dropdown
-        sankey_options = ['Total Flow (Sum of Range)']
+        sankey_options = ['Total Flow']
         if COL_HOUR in data_for_period.columns and not data_for_period[COL_HOUR].isnull().all():
             unique_hours_for_sankey = sorted(
                 [h.strftime('%H:%M') for h in data_for_period[COL_HOUR].dropna().unique() if isinstance(h, time)]
             )
-            sankey_options += [f"Average Hourly Flow ({hour})" for hour in unique_hours_for_sankey]
+            sankey_options += [f"({hour})" for hour in unique_hours_for_sankey]
         
         selected_sankey_option = st.selectbox(
             "Select Energy Flow Visualization:",
