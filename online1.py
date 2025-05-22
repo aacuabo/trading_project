@@ -795,25 +795,29 @@ def show_dashboard():
             st.error(f"An error occurred while creating charts: {e}")
             st.exception(e)
     
-        # --- Sankey Diagram Visualization ---
         st.subheader("Energy Flow Visualization")
-
-        # Replace the radio with a selectbox (dropdown) and set 'Total Flow (Sum of Range)' as default
-        sankey_options = ['Total Flow (Sum of Range)', 'Average Hourly Flow (Typical Hour)']
-        sankey_type = st.selectbox(
-            "Select Sankey Diagram Type:",
+        
+        # Combine both options into a single dropdown
+        sankey_options = ['Total Flow (Sum of Range)']
+        if COL_HOUR in data_for_period.columns and not data_for_period[COL_HOUR].isnull().all():
+            unique_hours_for_sankey = sorted(
+                [h.strftime('%H:%M') for h in data_for_period[COL_HOUR].dropna().unique() if isinstance(h, time)]
+            )
+            sankey_options += [f"Average Hourly Flow ({hour})" for hour in unique_hours_for_sankey]
+        
+        selected_sankey_option = st.selectbox(
+            "Select Energy Flow Visualization:",
             sankey_options,
-            index=0,  # 0 means 'Total Flow (Sum of Range)' is default
+            index=0,
             key="sankey_type_selector"
         )
-
+        
         sankey_chart_title_suffix = f"{', '.join(st.session_state.selected_days_of_week)} in {start_date_obj.strftime('%b %d')} - {end_date_obj.strftime('%b %d, %Y')}"
-
-        if sankey_type == 'Total Flow (Sum of Range)':
+        
+        if selected_sankey_option == 'Total Flow (Sum of Range)':
             total_mq_for_sankey_period = float(data_for_period[COL_TOTAL_MQ].sum(skipna=True) or 0)
             sankey_contributions = fetch_sankey_generator_contributions_total(start_date_str, end_date_str, selected_day_indices)
             sankey_consumptions = fetch_sankey_destination_consumption_total(start_date_str, end_date_str, selected_day_indices)
-            
             node_labels, _, sources, targets, values, node_colors = create_sankey_nodes_links(
                 sankey_contributions, sankey_consumptions, total_mq_for_sankey_period, "Total Supply"
             )
@@ -823,46 +827,29 @@ def show_dashboard():
                 st.plotly_chart(sankey_fig, use_container_width=True)
             else:
                 st.info(f"Insufficient data to create Total Sankey diagram for {sankey_chart_title_suffix}")
-
-        elif sankey_type == 'Average Hourly Flow (Typical Hour)':
+        
+        elif selected_sankey_option.startswith('Average Hourly Flow ('):
+            selected_hour = selected_sankey_option.split('(')[-1].rstrip(')')
             if COL_HOUR in data_for_period.columns and not data_for_period[COL_HOUR].isnull().all():
-                unique_hours_for_sankey = sorted(
-                    [h.strftime('%H:%M') for h in data_for_period[COL_HOUR].dropna().unique() if isinstance(h, time)]
-                )
-                if unique_hours_for_sankey:
-                    default_sankey_hour = '14:00' if '14:00' in unique_hours_for_sankey else unique_hours_for_sankey[0]
-                    selected_sankey_hour_str = st.selectbox(
-                        "Select hour for average energy flow visualization:", 
-                        options=unique_hours_for_sankey,
-                        index=unique_hours_for_sankey.index(default_sankey_hour) if default_sankey_hour in unique_hours_for_sankey else 0,
-                        key="avg_sankey_hour_selector"
+                sankey_interval_data = data_for_period[data_for_period[COL_HOUR].apply(
+                    lambda x: x.strftime('%H:%M') if isinstance(x, time) else '' 
+                ) == selected_hour]
+                if not sankey_interval_data.empty:
+                    avg_mq_for_sankey_interval = float(sankey_interval_data[COL_TOTAL_MQ].mean(skipna=True) or 0)
+                    interval_time_db_format = selected_hour + ":00"
+                    sankey_contributions_avg = fetch_sankey_generator_contributions_averaged(start_date_str, end_date_str, selected_day_indices, interval_time_db_format)
+                    sankey_consumptions_avg = fetch_sankey_destination_consumption_averaged(start_date_str, end_date_str, selected_day_indices, interval_time_db_format)
+                    node_labels, _, sources, targets, values, node_colors = create_sankey_nodes_links(
+                        sankey_contributions_avg, sankey_consumptions_avg, avg_mq_for_sankey_interval, f"Avg Supply at {selected_hour}"
                     )
-                    
-                    # Filter data for the selected hour to get average MQ for that specific hour
-                    sankey_interval_data = data_for_period[data_for_period[COL_HOUR].apply(
-                        lambda x: x.strftime('%H:%M') if isinstance(x, time) else '' 
-                    ) == selected_sankey_hour_str]
-                    
-                    if not sankey_interval_data.empty:
-                        avg_mq_for_sankey_interval = float(sankey_interval_data[COL_TOTAL_MQ].mean(skipna=True) or 0)
-                        
-                        interval_time_db_format = selected_sankey_hour_str + ":00"
-                        sankey_contributions_avg = fetch_sankey_generator_contributions_averaged(start_date_str, end_date_str, selected_day_indices, interval_time_db_format)
-                        sankey_consumptions_avg = fetch_sankey_destination_consumption_averaged(start_date_str, end_date_str, selected_day_indices, interval_time_db_format)
-
-                        node_labels, _, sources, targets, values, node_colors = create_sankey_nodes_links(
-                            sankey_contributions_avg, sankey_consumptions_avg, avg_mq_for_sankey_interval, f"Avg Supply at {selected_sankey_hour_str}"
-                        )
-                        if node_labels:
-                            fig_title = f"Avg Hourly Energy Flow at {selected_sankey_hour_str} (Range: {sankey_chart_title_suffix})"
-                            sankey_fig = create_sankey_figure(fig_title, node_labels, sources, targets, values, node_colors)
-                            st.plotly_chart(sankey_fig, use_container_width=True)
-                        else:
-                             st.info(f"Insufficient data to create Average Hourly Sankey for {selected_sankey_hour_str} in {sankey_chart_title_suffix}")
+                    if node_labels:
+                        fig_title = f"Avg Hourly Energy Flow at {selected_hour} (Range: {sankey_chart_title_suffix})"
+                        sankey_fig = create_sankey_figure(fig_title, node_labels, sources, targets, values, node_colors)
+                        st.plotly_chart(sankey_fig, use_container_width=True)
                     else:
-                        st.warning(f"No data for hour {selected_sankey_hour_str} in the selected period.")
+                        st.info(f"Insufficient data to create Average Hourly Sankey for {selected_hour} in {sankey_chart_title_suffix}")
                 else:
-                    st.warning("No valid hours with data for Average Hourly Sankey.")
+                    st.warning(f"No data for hour {selected_hour} in the selected period.")
             else:
                 st.warning("Hour data not available for Average Hourly Sankey.")
 
