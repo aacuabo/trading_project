@@ -505,10 +505,10 @@ def show_dashboard():
 
 
         # --- Data Overview for Selected Period (Tabs) ---
-        st.subheader("Data Overview for Selected Period")
+        st.subheader("Data Overview")
 
         # Then define the tabs:
-        tbl_tabs = st.tabs(["Summary", "Average Hourly Data", "Hourly Data (Selected Range)"])
+        tbl_tabs = st.tabs(["Summary", "Average Hourly Data", "Raw Hourly Data"])
 
         # Then continue with the tab content...
         with tbl_tabs[0]: # "Summary" tab
@@ -616,10 +616,10 @@ def show_dashboard():
                 # Overall Avg Price, Avg Daily Max Price, Max Hourly Total BCQ
                 with row2_col1:
                     st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
-                    if "Overall Avg Price (PHP/kWh)" in s_dict:
-                        st.metric(label="Overall Avg Price (PHP/kWh)", value=str(s_dict["Overall Avg Price (PHP/kWh)"]))
+                    if "Overall Avg Price (PHP/MWh)" in s_dict:
+                        st.metric(label="Overall Avg Price (PHP/MWh)", value=str(s_dict["Overall Avg Price (PHP/MWh)"]))
                     else:
-                        st.metric(label="Overall Avg Price (PHP/kWh)", value="N/A")
+                        st.metric(label="Overall Avg Price (PHP/MWh)", value="N/A")
                 with row2_col2:
                     st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                     col2_container = st.container()
@@ -637,10 +637,10 @@ def show_dashboard():
                         
                 with row2_col3:
                     st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
-                    if "Avg Daily Max Price (PHP/kWh)" in s_dict:
-                        st.metric(label="Avg Daily Max Price (PHP/kWh)", value=str(s_dict["Avg Daily Max Price (PHP/kWh)"]))
+                    if "Avg Daily Max Price (PHP/MWh)" in s_dict:
+                        st.metric(label="Avg Daily Max Price (PHP/MWh)", value=str(s_dict["Avg Daily Max Price (PHP/MWh)"]))
                     else:
-                        st.metric(label="Avg Daily Max Price (PHP/kWh)", value="N/A")
+                        st.metric(label="Avg Daily Max Price (PHP/MWh)", value="N/A")
                         
 
             else:
