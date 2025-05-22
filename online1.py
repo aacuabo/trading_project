@@ -709,7 +709,7 @@ def show_dashboard():
 
 
         # --- Average Hourly Metrics Visualization (Charts) ---
-        st.subheader("Average Hourly Metrics Visualization")
+        st.subheader("Metrics Visualization")
         chart_tabs_viz = st.tabs(["Avg MQ, BCQ & Prices by Hour", "Avg WESM & Prices by Hour"]) 
         
         try:
@@ -796,11 +796,14 @@ def show_dashboard():
             st.exception(e)
     
         # --- Sankey Diagram Visualization ---
-        st.subheader("Energy Flow Visualization (Sankey Diagram)")
-        
-        sankey_type = st.radio(
+        st.subheader("Energy Flow Visualization")
+
+        # Replace the radio with a selectbox (dropdown) and set 'Total Flow (Sum of Range)' as default
+        sankey_options = ['Total Flow (Sum of Range)', 'Average Hourly Flow (Typical Hour)']
+        sankey_type = st.selectbox(
             "Select Sankey Diagram Type:",
-            ('Total Flow (Sum of Range)', 'Average Hourly Flow (Typical Hour)'),
+            sankey_options,
+            index=0,  # 0 means 'Total Flow (Sum of Range)' is default
             key="sankey_type_selector"
         )
 
