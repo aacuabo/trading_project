@@ -803,7 +803,7 @@ def show_dashboard():
             unique_hours_for_sankey = sorted(
                 [h.strftime('%H:%M') for h in data_for_period[COL_HOUR].dropna().unique() if isinstance(h, time)]
             )
-            sankey_options += [f"({hour})" for hour in unique_hours_for_sankey]
+            sankey_options += [f"Average Hourly Flow ({hour})" for hour in unique_hours_for_sankey]
         
         selected_sankey_option = st.selectbox(
             "Select Energy Flow Visualization:",
