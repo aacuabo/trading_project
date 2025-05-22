@@ -517,9 +517,9 @@ def show_dashboard():
             # Avg Daily Max Price (moved here)
             if COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]):
                 avg_daily_max_price = float(daily_grouped[COL_PRICES].max().mean(skipna=True) or 0)
-                s_dict["Avg Daily Max Price (PHP/kWh)"] = f"{avg_daily_max_price:,.2f}" if pd.notna(avg_daily_max_price) and avg_daily_max_price != 0 else "N/A"
+                s_dict["Avg Daily Max Price (PHP/MWh)"] = f"{avg_daily_max_price:,.2f}" if pd.notna(avg_daily_max_price) and avg_daily_max_price != 0 else "N/A"
             else:
-                s_dict["Avg Daily Max Price (PHP/kWh)"] = "N/A (Data Missing)"
+                s_dict["Avg Daily Max Price (PHP/MWh)"] = "N/A (Data Missing)"
 
             # Max Hourly Total MQ for the range
             if COL_TOTAL_MQ in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_TOTAL_MQ]):
@@ -574,12 +574,12 @@ def show_dashboard():
             if COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]):
                 try:
                     overall_avg_price = float(data_for_period[COL_PRICES].mean(skipna=True) or 0)
-                    s_dict["Overall Avg Price (PHP/kWh)"] = f"{overall_avg_price:,.2f}" if pd.notna(overall_avg_price) and overall_avg_price != 0 else "N/A"
+                    s_dict["Overall Avg Price (PHP/MWh)"] = f"{overall_avg_price:,.2f}" if pd.notna(overall_avg_price) and overall_avg_price != 0 else "N/A"
                 except Exception as e:
                     st.warning(f"Error calculating overall average price: {e}")
-                    s_dict["Overall Avg Price (PHP/kWh)"] = "Error"
+                    s_dict["Overall Avg Price (PHP/MWh)"] = "Error"
             else:
-                s_dict["Overall Avg Price (PHP/kWh)"] = "N/A (Data Missing)"
+                s_dict["Overall Avg Price (PHP/MWh)"] = "N/A (Data Missing)"
 
             # Display metrics in the specified 3x2 grid layout
             if s_dict:
