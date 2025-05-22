@@ -780,7 +780,7 @@ def show_dashboard():
                             tooltip=[COL_HOUR_STR, alt.Tooltip(f'{COL_WESM}:Q', format=',.0f', title='Avg WESM (Net)')]
                         )
                         line_prices_wesm = base_wesm.mark_line(point=True, color='green', strokeDash=[3,3]).encode(
-                            y=alt.Y(f'{COL_PRICES}:Q', title='Avg Price (PHP/kWh)', axis=alt.Axis(titleColor='green'), scale=alt.Scale(zero=False)),
+                            y=alt.Y(f'{COL_PRICES}:Q', title='Avg Price (PHP/kWh)', axis=alt.Axis(titleColor='green'), scale=alt.Scale(zero=False, domain=[0, 32000])),
                             tooltip=[COL_HOUR_STR, alt.Tooltip(f'{COL_PRICES}:Q', format=',.2f', title='Avg Price')]
                         )
                         combined_chart_wesm_prices = alt.layer(bar_wesm, line_prices_wesm).resolve_scale(y='independent').properties(
