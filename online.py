@@ -449,7 +449,7 @@ def show_dashboard():
             st.dataframe(pd.DataFrame([s_dict]).style.format(precision=2, na_rep="N/A"), use_container_width=True)
 
     st.subheader("📈 Energy Metrics Over Time (Interactive)")
-        if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
+    if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
             melt_cols = [c for c in ["Total_MQ", "Total_BCQ", "Prices", "WESM"] if c in data and data[c].isnull().sum() < len(data[c])]
 
             if melt_cols:
