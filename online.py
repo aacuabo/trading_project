@@ -343,13 +343,15 @@ def show_dashboard():
 
         st.subheader("Data Overview")
         tbl_tabs = st.tabs(["Summary", "Hourly Data", "Daily Summary"])
-        with tbl_tabs[0]:
-            if s_dict:
-                # Create 4 columns
+            with tbl_tabs[0]:
+                # Initialize s_dict outside the conditionals
+                s_dict = {}
+            
+                # Create columns for the metrics
                 row1_col1, row1_col2, row1_col3, row1_col4 = st.columns(4)
-                
-                # Custom CSS for centering metrics
-                metric_style = """
+            
+                # Custom CSS for center alignment
+                st.markdown("""
                     <style>
                         [data-testid="stMetricValue"] {
                             display: flex;
@@ -364,33 +366,36 @@ def show_dashboard():
                             justify-content: center;
                         }
                     </style>
-                """
-                st.markdown(metric_style, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+            
+                # Calculate metrics
+                for c in ["Total_MQ", "Total_BCQ", "WESM"]:
+                    if c in data and pd.api.types.is_numeric_dtype(data[c]):
+                        s_dict[f"{c} (kWh)"] = data[c].sum(skipna=True)
+                    else:
+                        s_dict[f"{c} (kWh)"] = "N/A"
+                
+                if "Prices" in data and pd.api.types.is_numeric_dtype(data["Prices"]):
+                    s_dict["Avg Price (PHP/kWh)"] = data["Prices"].mean(skipna=True) if not data["Prices"].dropna().empty else "N/A"
+                else:
+                    s_dict["Avg Price (PHP/kWh)"] = "N/A"
             
                 # Display metrics in centered columns
                 with row1_col1:
-                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
-                    st.metric(label="Total MQ (kWh)", 
-                             value=f"{s_dict['Total_MQ (kWh)']:,.2f}" if isinstance(s_dict.get('Total_MQ (kWh)'), (int, float)) else "N/A")
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
+                    st.metric("Total MQ (kWh)", 
+                             f"{s_dict['Total_MQ (kWh)']:,.2f}" if isinstance(s_dict.get('Total_MQ (kWh)'), (int, float)) else "N/A")
+                
                 with row1_col2:
-                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
-                    st.metric(label="Total BCQ (kWh)", 
-                             value=f"{s_dict['Total_BCQ (kWh)']:,.2f}" if isinstance(s_dict.get('Total_BCQ (kWh)'), (int, float)) else "N/A")
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
+                    st.metric("Total BCQ (kWh)", 
+                             f"{s_dict['Total_BCQ (kWh)']:,.2f}" if isinstance(s_dict.get('Total_BCQ (kWh)'), (int, float)) else "N/A")
+                
                 with row1_col3:
-                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
-                    st.metric(label="WESM (kWh)", 
-                             value=f"{s_dict['WESM (kWh)']:,.2f}" if isinstance(s_dict.get('WESM (kWh)'), (int, float)) else "N/A")
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
+                    st.metric("WESM (kWh)", 
+                             f"{s_dict['WESM (kWh)']:,.2f}" if isinstance(s_dict.get('WESM (kWh)'), (int, float)) else "N/A")
+                
                 with row1_col4:
-                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
-                    st.metric(label="Avg Price (PHP/kWh)", 
-                             value=f"{s_dict['Avg Price (PHP/kWh)']:,.2f}" if isinstance(s_dict.get('Avg Price (PHP/kWh)'), (int, float)) else "N/A")
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    st.metric("Avg Price (PHP/kWh)", 
+                             f"{s_dict['Avg Price (PHP/kWh)']:,.2f}" if isinstance(s_dict.get('Avg Price (PHP/kWh)'), (int, float)) else "N/A")
             
         with tbl_tabs[1]:
             df_display = data.copy(); 
