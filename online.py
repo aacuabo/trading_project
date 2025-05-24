@@ -89,6 +89,7 @@ def fetch_data(selected_date_str: str):
         st.error(f"Error fetching data: {e}")
         return pd.DataFrame()
 
+    
 # --- SANKEY CHART HELPER FUNCTIONS ---
 
 GENERATOR_LONG_TO_SHORT_MAP = {
