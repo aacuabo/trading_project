@@ -418,6 +418,7 @@ def show_dashboard():
 
             if melt_cols:
                 chart_tabs = st.tabs(["Energy & Prices", "WESM Balance"])
+
                 with chart_tabs[0]: 
                     ep_c = [c for c in ["Total_MQ", "Total_BCQ", "Prices"] if c in melt_cols]
                     if ep_c:
@@ -465,8 +466,8 @@ def show_dashboard():
                             # No relevant data for any chart
                             comb_ch = alt.Chart(pd.DataFrame()).mark_text(text="No Energy/Price Data for chart.").encode()
                     
-                        # Display the combined chart with a title
-                        st.altair_chart(comb_ch.properties(title=f"Metrics for {st.session_state.selected_date_str}"), use_container_width=True)
+                        # Display the combined chart with a title - FIXED: Use selected_date_str instead of st.session_state.selected_date_str
+                        st.altair_chart(comb_ch.properties(title=f"Metrics for {selected_date_str}"), use_container_width=True)
                     else:
                         # Inform the user if no MQ, BCQ, or Price data is found at all
                         st.info("No MQ, BCQ or Price data for this chart.")
