@@ -343,46 +343,50 @@ def show_dashboard():
 
         st.subheader("Data Overview")
         tbl_tabs = st.tabs(["Summary", "Hourly Data", "Daily Summary"])
-        with tbl_tabs[0]:
+        with tbl_tabs[0]: # Or the correct index for your tab
             # Custom CSS for centering horizontally and top aligning content, with consistent height
             st.markdown("""
                 <style>
+                    /* Styles the main container for each st.metric */
                     div[data-testid="metric-container"] {
                         background-color: rgba(28, 131, 225, 0.1);
                         border: 1px solid rgba(28, 131, 225, 0.1);
                         padding: 1rem;
                         border-radius: 5px;
                         width: 100%;
-                        height: 150px;
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: flex-start;  /* top aligned vertically */
-                        align-items: center;
+                        height: 150px; /* Consistent height for the metric box */
+                        display: flex; /* Enables flexbox layout */
+                        flex-direction: column; /* Stacks children (label, value) vertically */
+                        justify-content: flex-start;  /* Aligns children to the top of the container */
+                        align-items: center; /* Centers children horizontally within the container */
                     }
                     
+                    /* Ensures direct div children (like the one holding label and value) take full width */
                     div[data-testid="metric-container"] > div {
                         width: 100%;
                     }
                     
+                    /* Styles the label of the metric */
                     div[data-testid="metric-container"] label {
-                        width: 100%;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        text-align: center;
+                        width: 100%; /* Takes full width to allow text-align to work effectively */
+                        display: flex; /* Can be used for further internal alignment if needed */
+                        justify-content: center; /* Centers the label text horizontally */
+                        align-items: center; /* Vertically centers text if label has a fixed height (not strictly necessary here) */
+                        text-align: center; /* Ensures the text itself is centered */
                     }
                     
+                    /* Styles the value part of the metric */
                     div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
-                        width: 100%;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        text-align: center;
+                        width: 100%; /* Takes full width */
+                        display: flex; /* Can be used for further internal alignment */
+                        justify-content: center; /* Centers the value text horizontally */
+                        align-items: center; /* Vertically centers text (useful for multi-line values, though less critical here) */
+                        text-align: center; /* Ensures the text itself is centered */
                     }
                 </style>
             """, unsafe_allow_html=True)
         
-            # Create 4 columns
+            # Create 4 columns for the metrics
             col1, col2, col3, col4 = st.columns(4)
         
             # Calculate the metrics
@@ -391,29 +395,35 @@ def show_dashboard():
                 if c in data and pd.api.types.is_numeric_dtype(data[c]):
                     s_dict[f"{c} (kWh)"] = data[c].sum(skipna=True)
                 else:
-                    s_dict[f"{c} (kWh)"] = "N/A"
+                    s_dict[f"{c} (kWh)"] = "N/A" # Store "N/A" as a string if data is missing or not numeric
             
             if "Prices" in data and pd.api.types.is_numeric_dtype(data["Prices"]):
+                # Check if the 'Prices' series (after dropping NaNs) is empty before calculating mean
                 s_dict["Avg Price (PHP/kWh)"] = data["Prices"].mean(skipna=True) if not data["Prices"].dropna().empty else "N/A"
             else:
-                s_dict["Avg Price (PHP/kWh)"] = "N/A"
+                s_dict["Avg Price (PHP/kWh)"] = "N/A" # Store "N/A" as a string
         
-            # Display metrics in centered (horizontally) columns, while aligned at the top
+            # Display metrics. The CSS above handles the alignment.
             with col1:
+                metric_value = s_dict.get('Total_MQ (kWh)')
                 st.metric("Total MQ", 
-                          f"{s_dict['Total_MQ (kWh)']:,.2f}" if isinstance(s_dict.get('Total_MQ (kWh)'), (int, float)) else "N/A")
+                          f"{metric_value:,.2f}" if isinstance(metric_value, (int, float)) else metric_value)
             
             with col2:
+                metric_value = s_dict.get('Total_BCQ (kWh)')
                 st.metric("Total BCQ", 
-                          f"{s_dict['Total_BCQ (kWh)']:,.2f}" if isinstance(s_dict.get('Total_BCQ (kWh)'), (int, float)) else "N/A")
+                          f"{metric_value:,.2f}" if isinstance(metric_value, (int, float)) else metric_value)
             
             with col3:
+                metric_value = s_dict.get('WESM (kWh)')
                 st.metric("WESM", 
-                          f"{s_dict['WESM (kWh)']:,.2f}" if isinstance(s_dict.get('WESM (kWh)'), (int, float)) else "N/A")
+                          f"{metric_value:,.2f}" if isinstance(metric_value, (int, float)) else metric_value)
             
             with col4:
+                metric_value = s_dict.get('Avg Price (PHP/kWh)')
                 st.metric("Avg Price", 
-                          f"{s_dict['Avg Price (PHP/kWh)']:,.2f}" if isinstance(s_dict.get('Avg Price (PHP/kWh)'), (int, float)) else "N/A")
+                          f"{metric_value:,.2f}" if isinstance(metric_value, (int, float)) else metric_value)
+
             
         with tbl_tabs[1]:
             df_display = data.copy(); 
