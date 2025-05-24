@@ -459,13 +459,13 @@ def show_dashboard():
                             comb_ch = line_charts_energy
                         elif "Prices" in ep_c:
                             # Only show price bars
-                            comb_ch = bar_chart_prices
+                            comb_ch = bar_chart_prices`
                         else:
                             # No relevant data for any chart
                             comb_ch = alt.Chart(pd.DataFrame()).mark_text(text="No Energy/Price Data for chart.").encode()
                 
                         # Display the combined chart with a title and interactivity
-                        st.altair_chart(comb_ch.properties(title=f"Metrics for {st.session_state.selected_date_str}"), use_container_width=True)
+                        st.altair_chart(comb_ch.properties(title=f"Metrics"), use_container_width=True)
                     else:
                         # Inform the user if no MQ, BCQ, or Price data is found at all
                         st.info("No MQ, BCQ or Price data for this chart.")
