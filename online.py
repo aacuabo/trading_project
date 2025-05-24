@@ -343,8 +343,8 @@ def show_dashboard():
 
         st.subheader("Data Overview")
         tbl_tabs = st.tabs(["Summary", "Hourly Data", "Daily Summary"])
-        with tbl_tabs[0]: # Or the correct index for your tab
-            # Custom CSS for centering horizontally and top aligning content within each metric, with consistent height
+        with tbl_tabs[0]: # "Summary" tab
+            # Custom CSS for centering horizontally and top aligning content, with consistent height
             st.markdown("""
                 <style>
                     /* Styles the main container for each st.metric */
@@ -368,65 +368,147 @@ def show_dashboard():
                     
                     /* Styles the label of the metric */
                     div[data-testid="metric-container"] label {
-                        width: 100%; /* Takes full width to allow text-align to work effectively */
+                        width: 100%; 
                         display: flex; 
-                        justify-content: center; /* Centers the label text horizontally */
+                        justify-content: center; 
                         align-items: center; 
-                        text-align: center; /* Ensures the text itself is centered */
+                        text-align: center; 
                     }
                     
                     /* Styles the value part of the metric */
                     div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
-                        width: 100%; /* Takes full width */
+                        width: 100%; 
                         display: flex; 
-                        justify-content: center; /* Centers the value text horizontally */
+                        justify-content: center; 
                         align-items: center; 
-                        text-align: center; /* Ensures the text itself is centered */
+                        text-align: center; 
                     }
                 </style>
             """, unsafe_allow_html=True)
-            
-            # --- Calculate the metrics ---
+        
             s_dict = {}
-            for c in ["Total_MQ", "Total_BCQ", "WESM"]:
-                if c in data and pd.api.types.is_numeric_dtype(data[c]):
-                    s_dict[f"{c} (kWh)"] = data[c].sum(skipna=True)
-                else:
-                    s_dict[f"{c} (kWh)"] = "N/A"
-            
-            if "Prices" in data and pd.api.types.is_numeric_dtype(data["Prices"]):
-                s_dict["Avg Price (PHP/kWh)"] = data["Prices"].mean(skipna=True) if not data["Prices"].dropna().empty else "N/A"
+            data_for_period = data.copy() # Use a copy if you might modify it
+        
+            # --- Metric Calculations ---
+        
+            # Ensure Date column is datetime
+            if COL_DATE in data_for_period and not pd.api.types.is_datetime64_any_dtype(data_for_period[COL_DATE]):
+                data_for_period[COL_DATE] = pd.to_datetime(data_for_period[COL_DATE], errors='coerce')
+        
+            # Prepare daily_grouped data if Date column is valid
+            daily_grouped = None
+            if COL_DATE in data_for_period and pd.api.types.is_datetime64_any_dtype(data_for_period[COL_DATE]) and not data_for_period[COL_DATE].isnull().all():
+                daily_grouped = data_for_period.dropna(subset=[COL_DATE]).groupby(data_for_period[COL_DATE].dt.date)
+        
+            # Avg Daily Max Price
+            if daily_grouped and COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]):
+                try:
+                    avg_daily_max_price = float(daily_grouped[COL_PRICES].max().mean(skipna=True) if not daily_grouped[COL_PRICES].max().empty else 0.0)
+                    s_dict["Avg Daily Max Price (PHP/MWh)"] = f"{avg_daily_max_price:,.2f}" if pd.notna(avg_daily_max_price) and avg_daily_max_price != 0 else "N/A"
+                except Exception: # Catches errors if daily_grouped is empty or other issues
+                    s_dict["Avg Daily Max Price (PHP/MWh)"] = "N/A"
             else:
-                s_dict["Avg Price (PHP/kWh)"] = "N/A"
+                s_dict["Avg Daily Max Price (PHP/MWh)"] = "N/A (Data Missing/Invalid)"
         
-            # --- Display metrics in a 2x2 grid ---
-            # First row
-            row1_col1, row1_col2 = st.columns(2)
-            with row1_col1:
-                st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
-                metric_value_mq = s_dict.get('Total_MQ (kWh)')
-                st.metric("Total MQ", 
-                          f"{metric_value_mq:,.2f}" if isinstance(metric_value_mq, (int, float)) else metric_value_mq)
+            # Max Hourly Total MQ and its Date/Time
+            if COL_TOTAL_MQ in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_TOTAL_MQ]) and not data_for_period[COL_TOTAL_MQ].dropna().empty:
+                max_hourly_mq = float(data_for_period[COL_TOTAL_MQ].max(skipna=True) or 0)
+                s_dict["Max Hourly Total MQ (kWh)"] = f"{max_hourly_mq:,.0f}" if pd.notna(max_hourly_mq) and max_hourly_mq != 0 else "N/A"
                 
-            with row1_col2:
-                st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
-                metric_value_bcq = s_dict.get('Total_BCQ (kWh)')
-                st.metric("Total BCQ", 
-                          f"{metric_value_bcq:,.2f}" if isinstance(metric_value_bcq, (int, float)) else metric_value_bcq)
+                if pd.notna(max_hourly_mq) and max_hourly_mq != 0 and COL_DATE in data_for_period.columns and COL_HOUR in data_for_period.columns:
+                    max_mq_rows = data_for_period.loc[data_for_period[COL_TOTAL_MQ] == max_hourly_mq]
+                    if not max_mq_rows.empty:
+                        max_mq_row = max_mq_rows.iloc[0]
+                        max_mq_date_str = "N/A"
+                        if pd.notna(max_mq_row[COL_DATE]) and isinstance(max_mq_row[COL_DATE], pd.Timestamp): # Check if it's a Timestamp (after to_datetime)
+                            max_mq_date_str = max_mq_row[COL_DATE].strftime('%Y-%m-%d')
+                        
+                        max_mq_time_str = "N/A"
+                        if pd.notna(max_mq_row[COL_HOUR]):
+                            if isinstance(max_mq_row[COL_HOUR], time):
+                                max_mq_time_str = max_mq_row[COL_HOUR].strftime('%H:%M')
+                            else: # Try to parse if it's a string
+                                try:
+                                    max_mq_time_str = pd.to_datetime(str(max_mq_row[COL_HOUR])).strftime('%H:%M')
+                                except ValueError:
+                                    max_mq_time_str = str(max_mq_row[COL_HOUR]) # Fallback if not parsable
+                        
+                        s_dict["Max MQ Date/Time"] = f"{max_mq_date_str} {max_mq_time_str}".strip() if max_mq_date_str != "N/A" or max_mq_time_str != "N/A" else "N/A"
+                    else:
+                        s_dict["Max MQ Date/Time"] = "N/A"
+                else:
+                    s_dict["Max MQ Date/Time"] = "N/A"
+            else:
+                s_dict["Max Hourly Total MQ (kWh)"] = "N/A (Data Missing/Invalid)"
+                s_dict["Max MQ Date/Time"] = "N/A"
         
-            # Second row
-            row2_col1, row2_col2 = st.columns(2)
-            with row2_col1:
-                st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
-                metric_value_wesm = s_dict.get('WESM (kWh)')
-                st.metric("WESM", 
-                          f"{metric_value_wesm:,.2f}" if isinstance(metric_value_wesm, (int, float)) else metric_value_wesm)
+            # Sums for Total MQ, Total BCQ, WESM
+            for c_col_name, c_label_mwh, c_label_kwh, c_format_mwh, c_format_kwh in [
+                (COL_TOTAL_MQ, "Sum Total MQ (MWh)", None, ",.3f", None),
+                (COL_TOTAL_BCQ, "Sum Total BCQ (MWh)", None, ",.3f", None),
+                (COL_WESM, None, "Total WESM (kWh)", None, ",.0f")
+            ]:
+                label_to_use = c_label_mwh if c_label_mwh else c_label_kwh
+                if c_col_name in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[c_col_name]):
+                    try:
+                        total_sum_kwh = float(data_for_period[c_col_name].sum(skipna=True) or 0)
+                        display_value = "N/A"
+                        if pd.notna(total_sum_kwh) and (total_sum_kwh != 0 or c_label_kwh): # Show 0 for kWh if not 0, MWh must be non-zero
+                            if c_label_mwh: # MWh calculation
+                                value_mwh = total_sum_kwh / 1000
+                                if value_mwh !=0: display_value = f"{value_mwh:{c_format_mwh}}"
+                            elif c_label_kwh: # kWh calculation
+                                 display_value = f"{total_sum_kwh:{c_format_kwh}}"
+                        s_dict[label_to_use] = display_value
+                    except Exception as e:
+                        st.warning(f"Error calculating sum for {c_col_name}: {e}")
+                        s_dict[label_to_use] = "Error"
+                else:
+                    s_dict[label_to_use] = "N/A (Data Missing/Invalid)"
+                    
+            # Overall Avg Price
+            if COL_PRICES in data_for_period.columns and pd.api.types.is_numeric_dtype(data_for_period[COL_PRICES]) and not data_for_period[COL_PRICES].dropna().empty:
+                try:
+                    overall_avg_price = float(data_for_period[COL_PRICES].mean(skipna=True) or 0)
+                    s_dict["Overall Avg Price (PHP/MWh)"] = f"{overall_avg_price:,.2f}" if pd.notna(overall_avg_price) and overall_avg_price != 0 else "N/A"
+                except Exception as e:
+                    st.warning(f"Error calculating overall average price: {e}")
+                    s_dict["Overall Avg Price (PHP/MWh)"] = "Error"
+            else:
+                s_dict["Overall Avg Price (PHP/MWh)"] = "N/A (Data Missing/Invalid)"
+        
+            # --- Display metrics in 3x2 grid layout ---
+            if s_dict: # Check if there are any metrics calculated
+                row1_col1, row1_col2, row1_col3 = st.columns(3)
+                row2_col1, row2_col2, row2_col3 = st.columns(3)
                 
-            with row2_col2:
-                st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
-                metric_value_price = s_dict.get('Avg Price (PHP/kWh)')
-                st.metric("Avg Price", 
-                          f"{metric_value_price:,.2f}" if isinstance(metric_value_price, (int, float)) else metric_value_price)
+                # Row 1
+                with row1_col1:
+                    st.metric(label="Sum Total MQ (MWh)", value=str(s_dict.get("Sum Total MQ (MWh)", "N/A")))
+                with row1_col2:
+                    st.metric(label="Sum Total BCQ (MWh)", value=str(s_dict.get("Sum Total BCQ (MWh)", "N/A")))
+                with row1_col3:
+                    st.metric(label="Total WESM (kWh)", value=str(s_dict.get("Total WESM (kWh)", "N/A")))
+                    
+                # Row 2
+                with row2_col1:
+                    st.metric(label="Overall Avg Price (PHP/MWh)", value=str(s_dict.get("Overall Avg Price (PHP/MWh)", "N/A")))
+                with row2_col2:
+                    # Use a container to group the metric and its sub-text (date/time)
+                    # The CSS will style the st.metric part. The markdown will flow below it within this column.
+                    metric_val_mq_hourly = str(s_dict.get("Max Hourly Total MQ (kWh)", "N/A"))
+                    st.metric(label="Max Hourly Total MQ (kWh)", value=metric_val_mq_hourly)
+                    
+                    date_time_info = s_dict.get("Max MQ Date/Time", "N/A")
+                    if date_time_info != "N/A" and date_time_info and metric_val_mq_hourly not in ["N/A", "N/A (Data Missing/Invalid)", "Error"] :
+                        # This markdown is placed directly in the column, after the metric.
+                        # It will appear below the 150px metric box.
+                         st.markdown(f"<p style='text-align: center; color: gray; font-size: 0.8em; margin-top: -20px; line-height: 1;'>on {date_time_info}</p>", unsafe_allow_html=True)
+                with row2_col3:
+                    st.metric(label="Avg Daily Max Price (PHP/MWh)", value=str(s_dict.get("Avg Daily Max Price (PHP/MWh)", "N/A")))
+            else:
+                st.info("No summary data to display for the selected criteria.")
+
 
             
         with tbl_tabs[1]:
