@@ -453,9 +453,9 @@ def show_dashboard():
                             if "Prices" in ep_c:
                                 bar_chart_prices = alt.Chart(melt_ep).transform_filter(
                                     alt.datum.Metric == "Prices"
-                                ).mark_bar(color="#40B0A6").encode( # Standard Altair color
+                                ).mark_bar(color="#40B0A6", opacity=0.3).encode( # Standard Altair color
                                     x=alt.X("Time:T", timeUnit="hours", title="Hour of Day"), # MODIFIED: Added x-axis for hours
-                                    y=alt.Y("Value:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=True)),
+                                    y=alt.Y("Value:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=False, domain=[0, 32000])),
                                     tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
                                 )
                     
