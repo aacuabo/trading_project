@@ -422,14 +422,14 @@ def show_dashboard():
                     if ep_c:
                         # Melt the DataFrame to long format for easier Altair plotting
                         melt_ep = data.melt(id_vars=["Time"], value_vars=ep_c, var_name="Metric", value_name="Value").dropna(subset=['Value'])
-                
+                    
                         # Initialize empty charts
                         line_charts_energy = alt.Chart(pd.DataFrame())
                         bar_chart_prices = alt.Chart(pd.DataFrame())
-                
+                    
                         # Define energy metrics that are present in the data
                         energy_metrics = [m for m in ["Total_MQ", "Total_BCQ"] if m in ep_c]
-                
+                    
                         # Create line charts for energy metrics if they exist
                         if energy_metrics:
                             line_charts_energy = alt.Chart(melt_ep).transform_filter(
@@ -440,7 +440,7 @@ def show_dashboard():
                                                 scale=alt.Scale(domain=['Total_MQ', 'Total_BCQ'], range=['#FFC20A', '#1A85FF'])),
                                 tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
                             )
-                
+                    
                         # Create a bar chart for prices if it exists
                         if "Prices" in ep_c:
                             bar_chart_prices = alt.Chart(melt_ep).transform_filter(
@@ -449,7 +449,7 @@ def show_dashboard():
                                 y=alt.Y("Value:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=True)),
                                 tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
                             )
-                
+                    
                         # Combine charts based on what data is available
                         if energy_metrics and "Prices" in ep_c:
                             # Layer both energy lines and price bars
@@ -459,17 +459,16 @@ def show_dashboard():
                             comb_ch = line_charts_energy
                         elif "Prices" in ep_c:
                             # Only show price bars
-                            comb_ch = bar_chart_prices`
+                            comb_ch = bar_chart_prices
                         else:
                             # No relevant data for any chart
                             comb_ch = alt.Chart(pd.DataFrame()).mark_text(text="No Energy/Price Data for chart.").encode()
-                
-                        # Display the combined chart with a title and interactivity
-                        st.altair_chart(comb_ch.properties(title=f"Metrics"), use_container_width=True)
+                    
+                        # Display the combined chart with a title
+                        st.altair_chart(comb_ch.properties(title=f"Metrics for {st.session_state.selected_date_str}"), use_container_width=True)
                     else:
                         # Inform the user if no MQ, BCQ, or Price data is found at all
                         st.info("No MQ, BCQ or Price data for this chart.")
-    
 
 
                 with chart_tabs[1]: 
