@@ -343,7 +343,7 @@ def show_dashboard():
 
         st.subheader("Data Overview")
         tbl_tabs = st.tabs(["Summary", "Hourly Data", "Daily Summary"])
-            with tbl_tabs[0]:
+        with tbl_tabs[0]:
                 # Initialize s_dict outside the conditionals
                 s_dict = {}
             
