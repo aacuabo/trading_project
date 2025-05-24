@@ -500,7 +500,7 @@ def show_dashboard():
                             # Calculate absolute WESM for Y-axis magnitude
                             # The transform_calculate is applied to the chart using this data
                             ch_wesm = alt.Chart(wesm_d).transform_calculate(
-                                AbsWESM="(datum.WESM)"  # Calculate absolute value of WESM
+                                AbsWESM="abs(datum.WESM)"  # Calculate absolute value of WESM
                             ).mark_bar(opacity=0.3).encode(
                                 x=x_axis_hourly,
                                 y=alt.Y("AbsWESM:Q", title="WESM Volume (kWh)", axis=alt.Axis(titleColor='#800080')), # Purple title
