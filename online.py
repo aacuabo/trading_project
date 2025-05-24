@@ -298,6 +298,30 @@ def create_sankey_chart(interval_mq_val: float, interval_wesm_val_unscaled: floa
     )
     return fig
 
+kpi_alignment_css = """
+<style>
+    [data-testid="stMetricValue"] {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    [data-testid="stMetricLabel"] {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    [data-testid="stMetric"] {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        margin: auto;
+    }
+</style>
+"""
+st.markdown(kpi_alignment_css, unsafe_allow_html=True)
+
 def app_content():
     st.title("📊 Daily Energy Trading Dashboard")
     st.sidebar.header("Navigation")
@@ -345,6 +369,7 @@ def show_dashboard():
         tbl_tabs = st.tabs(["Summary Metrics", "Hourly Data", "Daily Summary"])
 
         with tbl_tabs[0]:
+            st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
             col1, col2, col3, col4 = st.columns(4)
             if "Prices" in data.columns and pd.api.types.is_numeric_dtype(data["Prices"]):
                 pv = data["Prices"].dropna();
