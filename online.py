@@ -345,7 +345,7 @@ def show_dashboard():
         tbl_tabs = st.tabs(["Summary Metrics", "Hourly Data", "Daily Summary"])
 
         with tbl_tabs[0]:
-                col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3, col4 = st.columns(4)
             if "Prices" in data.columns and pd.api.types.is_numeric_dtype(data["Prices"]):
                 pv = data["Prices"].dropna();
                 col1.metric("Max Price", f"{pv.max():,.2f}" if not pv.empty else "N/A")
