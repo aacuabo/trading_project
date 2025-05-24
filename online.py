@@ -341,100 +341,36 @@ def show_dashboard():
             data['WESM'] = pd.NA
             st.warning("Could not calculate WESM as Total_BCQ or Total_MQ is missing or not numeric.")
 
-        st.subheader("Data Overview")
-        tbl_tabs = st.tabs(["Summary", "Hourly Data", "Daily Summary"])
+        st.subheader("Daily Summary Metrics")
+        col1, col2, col3, col4 = st.columns(4)
+        if "Prices" in data.columns and pd.api.types.is_numeric_dtype(data["Prices"]):
+            pv = data["Prices"].dropna();
+            col1.metric("Max Price", f"{pv.max():,.2f}" if not pv.empty else "N/A")
+            col2.metric("Avg Price", f"{pv.mean():,.2f}" if not pv.empty else "N/A")
+            col3.metric("Min Price", f"{pv.min():,.2f}" if not pv.empty else "N/A")
+        else: [c.warning("Price N/A") for c in [col1, col2, col3]]
 
+        max_mq_val_display, max_mq_time_display = "N/A", "N/A"
+        if "Total_MQ" in data.columns and pd.api.types.is_numeric_dtype(data["Total_MQ"]) and not data["Total_MQ"].isnull().all():
+            max_mq_val_for_day = data["Total_MQ"].max(skipna=True)
+            if pd.notna(max_mq_val_for_day):
+                max_mq_idx_for_day_display = data["Total_MQ"].idxmax(skipna=True)
+                t_obj_display = data.loc[max_mq_idx_for_day_display, "Time"]
+                t_str_display = t_obj_display.strftime("%H:%M") if pd.notna(t_obj_display) and hasattr(t_obj_display, 'strftime') else "N/A"
+                max_mq_val_display = f"{max_mq_val_for_day:,.2f}"
+                max_mq_time_display = f"at {t_str_display}"
+                col4.metric("Max Total MQ", max_mq_val_display, max_mq_time_display)
+            else: col4.info("MQ all NaN.")
+        else: col4.warning("MQ N/A")
 
-        # tbl_tabs = st.tabs(["Summary Metrics", "Details"])
-        
-        with tbl_tabs[0]: # Or the correct index for your tab
-            # Custom CSS for centering horizontally and top aligning content within each metric, with consistent height
-                    st.markdown("""
-                        <style>
-                            /* Styles the main container for each st.metric */
-                            div[data-testid="metric-container"] {
-                                background-color: rgba(28, 131, 225, 0.1);
-                                border: 1px solid rgba(28, 131, 225, 0.1);
-                                padding: 1rem;
-                                border-radius: 5px;
-                                width: 100%;
-                                height: 150px; /* Consistent height for the metric box */
-                                display: flex; /* Enables flexbox layout */
-                                flex-direction: column; /* Stacks children (label, value) vertically */
-                                justify-content: flex-start;  /* Aligns children to the top of the container */
-                                align-items: center; /* Centers children horizontally within the container */
-                            }
-                            
-                            /* Ensures direct div children (like the one holding label and value) take full width */
-                            div[data-testid="metric-container"] > div {
-                                width: 100%;
-                            }
-                            
-                            /* Styles the label of the metric */
-                            div[data-testid="metric-container"] label {
-                                width: 100%; /* Takes full width to allow text-align to work effectively */
-                                display: flex; 
-                                justify-content: center; /* Centers the label text horizontally */
-                                align-items: center; 
-                                text-align: center; /* Ensures the text itself is centered */
-                            }
-                            
-                            /* Styles the value part of the metric */
-                            div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
-                                width: 100%; /* Takes full width */
-                                display: flex; 
-                                justify-content: center; /* Centers the value text horizontally */
-                                align-items: center; 
-                                text-align: center; /* Ensures the text itself is centered */
-                            }
-                        </style>
-                    """, unsafe_allow_html=True)
-                    
-                    # --- Calculate the metrics ---
-                    s_dict = {}
-                    for c in ["Total_MQ", "Total_BCQ", "WESM"]:
-                        if c in data and pd.api.types.is_numeric_dtype(data[c]):
-                            s_dict[f"{c} (kWh)"] = data[c].sum(skipna=True)
-                        else:
-                            s_dict[f"{c} (kWh)"] = "N/A"
-                    
-                    if "Prices" in data and pd.api.types.is_numeric_dtype(data["Prices"]):
-                        s_dict["Avg Price (PHP/kWh)"] = data["Prices"].mean(skipna=True) if not data["Prices"].dropna().empty else "N/A"
-                    else:
-                        s_dict["Avg Price (PHP/kWh)"] = "N/A"
-                
-                    # --- Display metrics in a 2x2 grid ---
-                    # First row
-                    row1_col1, row1_col2 = st.columns(2)
-                    with row1_col1:
-                        metric_value_mq = s_dict.get('Total_MQ (kWh)')
-                        st.metric("Total MQ", 
-                                  f"{metric_value_mq:,.2f}" if isinstance(metric_value_mq, (int, float)) else metric_value_mq)
-                        
-                    with row1_col2:
-                        metric_value_bcq = s_dict.get('Total_BCQ (kWh)')
-                        st.metric("Total BCQ", 
-                                  f"{metric_value_bcq:,.2f}" if isinstance(metric_value_bcq, (int, float)) else metric_value_bcq)
-                
-                    # Second row
-                    row2_col1, row2_col2 = st.columns(2)
-                    with row2_col1:
-                        metric_value_wesm = s_dict.get('WESM (kWh)')
-                        st.metric("WESM", 
-                                  f"{metric_value_wesm:,.2f}" if isinstance(metric_value_wesm, (int, float)) else metric_value_wesm)
-                
-                    with row2_col2:
-                        metric_value_price = s_dict.get('Avg Price (PHP/kWh)')
-                        st.metric("Avg Price", 
-                                  f"{metric_value_price:,.2f}" if isinstance(metric_value_price, (int, float)) else metric_value_price)
-            
-        with tbl_tabs[1]:
+        st.subheader("Data Tables")
+        tbl_tabs = st.tabs(["Hourly Data", "Daily Summary"])
+        with tbl_tabs[0]:
             df_display = data.copy(); 
             if 'Time' in df_display and pd.api.types.is_datetime64_any_dtype(df_display['Time']):
                 df_display['Time'] = df_display['Time'].dt.strftime('%H:%M')
             st.dataframe(df_display.style.format(precision=2, na_rep="N/A"),height=300, use_container_width=True)
-        
-        with tbl_tabs[2]:
+        with tbl_tabs[1]:
             s_dict = {}
             for c in ["Total_MQ", "Total_BCQ", "WESM"]:
                 if c in data and pd.api.types.is_numeric_dtype(data[c]):
@@ -448,8 +384,8 @@ def show_dashboard():
                  s_dict["Avg Price (PHP/kWh)"] = "N/A"
             st.dataframe(pd.DataFrame([s_dict]).style.format(precision=2, na_rep="N/A"), use_container_width=True)
 
-    st.subheader("📈 Energy Metrics Over Time (Interactive)")
-    if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
+        st.subheader("📈 Energy Metrics Over Time (Interactive)")
+        if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
             melt_cols = [c for c in ["Total_MQ", "Total_BCQ", "Prices", "WESM"] if c in data and data[c].isnull().sum() < len(data[c])]
 
             if melt_cols:
@@ -566,8 +502,8 @@ def show_dashboard():
                     if interval_mq_unscaled >= 0 and (interval_mq_unscaled > 0.001 or interval_bcq_unscaled > 0.001):
                          can_gen_sankey = True 
         
-    if can_gen_sankey:
-            st.subheader(f"⚡ Energy Flow Sankey Chart")
+        if can_gen_sankey:
+            st.subheader(f"⚡ Energy Flow for Interval ({max_mq_interval_time_str_header} on {selected_date_str})")
             sankey_fig = create_sankey_chart(interval_mq_unscaled, interval_wesm_unscaled, selected_date_str, max_mq_interval_time_str_header)
             if sankey_fig: st.plotly_chart(sankey_fig, use_container_width=True)
         else:
