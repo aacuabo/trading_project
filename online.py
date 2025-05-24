@@ -581,6 +581,7 @@ def show_dashboard():
                                 "- **Green Bars**: Net Export (Positive WESM values).\n"
                                 "- **Red Bars**: Net Import (Negative WESM values).\n"
                                 "- *Bar height represents the absolute volume of WESM interaction (kWh).*"
+                            )
             else: st.warning(f"Plotting columns missing/null for {selected_date_str}.")
         else: st.warning("Time column invalid for charts.")
 
