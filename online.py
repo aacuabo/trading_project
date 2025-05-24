@@ -403,11 +403,13 @@ def show_dashboard():
             # First row
             row1_col1, row1_col2 = st.columns(2)
             with row1_col1:
+                st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                 metric_value_mq = s_dict.get('Total_MQ (kWh)')
                 st.metric("Total MQ", 
                           f"{metric_value_mq:,.2f}" if isinstance(metric_value_mq, (int, float)) else metric_value_mq)
                 
             with row1_col2:
+                st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                 metric_value_bcq = s_dict.get('Total_BCQ (kWh)')
                 st.metric("Total BCQ", 
                           f"{metric_value_bcq:,.2f}" if isinstance(metric_value_bcq, (int, float)) else metric_value_bcq)
@@ -415,11 +417,13 @@ def show_dashboard():
             # Second row
             row2_col1, row2_col2 = st.columns(2)
             with row2_col1:
+                st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                 metric_value_wesm = s_dict.get('WESM (kWh)')
                 st.metric("WESM", 
                           f"{metric_value_wesm:,.2f}" if isinstance(metric_value_wesm, (int, float)) else metric_value_wesm)
                 
             with row2_col2:
+                st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                 metric_value_price = s_dict.get('Avg Price (PHP/kWh)')
                 st.metric("Avg Price", 
                           f"{metric_value_price:,.2f}" if isinstance(metric_value_price, (int, float)) else metric_value_price)
