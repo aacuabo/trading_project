@@ -672,7 +672,7 @@ def show_dashboard():
                          hourly_avg_table_data = hourly_avg_table_data.sort_values('Hour_Sort_Key', na_position='last').drop(columns=['Hour_Sort_Key'])
 
 
-                    hourly_avg_table_data.rename(columns={COL_HOUR_STR: 'Time (Avg Across Selected Days)'}, inplace=True)
+                    hourly_avg_table_data.rename(columns={COL_HOUR_STR: 'Time'}, inplace=True)
                     
                     for col_to_format in [COL_TOTAL_MQ, COL_TOTAL_BCQ, COL_PRICES, COL_WESM]:
                         if col_to_format in hourly_avg_table_data.columns:
