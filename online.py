@@ -382,6 +382,7 @@ def show_dashboard():
             
                 # Display metrics in centered columns
                 with row1_col1:
+                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True) 
                     st.metric("Total MQ (kWh)", 
                              f"{s_dict['Total_MQ (kWh)']:,.2f}" if isinstance(s_dict.get('Total_MQ (kWh)'), (int, float)) else "N/A")
                 
