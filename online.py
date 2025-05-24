@@ -344,31 +344,49 @@ def show_dashboard():
         st.subheader("Data Overview")
         tbl_tabs = st.tabs(["Summary", "Hourly Data", "Daily Summary"])
         with tbl_tabs[0]:
-                # Initialize s_dict outside the conditionals
-                s_dict = {}
-            
-                # Create columns for the metrics
-                row1_col1, row1_col2, row1_col3, row1_col4 = st.columns(4)
-            
-                # Custom CSS for center alignment
+                # Custom CSS for centering metrics and ensuring consistent height
                 st.markdown("""
                     <style>
-                        [data-testid="stMetricValue"] {
+                        div[data-testid="metric-container"] {
+                            background-color: rgba(28, 131, 225, 0.1);
+                            border: 1px solid rgba(28, 131, 225, 0.1);
+                            padding: 1rem;
+                            border-radius: 5px;
+                            width: 100%;
+                            height: 150px;
                             display: flex;
+                            flex-direction: column;
                             justify-content: center;
+                            align-items: center;
                         }
-                        [data-testid="stMetricLabel"] {
-                            display: flex;
-                            justify-content: center;
+                        
+                        div[data-testid="metric-container"] > div {
+                            width: 100%;
                         }
-                        [data-testid="stMetricDelta"] {
+                        
+                        div[data-testid="metric-container"] label {
+                            width: 100%;
                             display: flex;
                             justify-content: center;
+                            align-items: center;
+                            text-align: center;
+                        }
+                        
+                        div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+                            width: 100%;
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                            text-align: center;
                         }
                     </style>
                 """, unsafe_allow_html=True)
             
-                # Calculate metrics
+                # Create 4 columns
+                col1, col2, col3, col4 = st.columns(4)
+            
+                # Calculate the metrics
+                s_dict = {}
                 for c in ["Total_MQ", "Total_BCQ", "WESM"]:
                     if c in data and pd.api.types.is_numeric_dtype(data[c]):
                         s_dict[f"{c} (kWh)"] = data[c].sum(skipna=True)
@@ -381,21 +399,20 @@ def show_dashboard():
                     s_dict["Avg Price (PHP/kWh)"] = "N/A"
             
                 # Display metrics in centered columns
-                with row1_col1:
-                    st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True) 
-                    st.metric("Total MQ (kWh)", 
+                with col1:
+                    st.metric("Total MQ", 
                              f"{s_dict['Total_MQ (kWh)']:,.2f}" if isinstance(s_dict.get('Total_MQ (kWh)'), (int, float)) else "N/A")
                 
-                with row1_col2:
-                    st.metric("Total BCQ (kWh)", 
+                with col2:
+                    st.metric("Total BCQ", 
                              f"{s_dict['Total_BCQ (kWh)']:,.2f}" if isinstance(s_dict.get('Total_BCQ (kWh)'), (int, float)) else "N/A")
                 
-                with row1_col3:
-                    st.metric("WESM (kWh)", 
+                with col3:
+                    st.metric("WESM", 
                              f"{s_dict['WESM (kWh)']:,.2f}" if isinstance(s_dict.get('WESM (kWh)'), (int, float)) else "N/A")
                 
-                with row1_col4:
-                    st.metric("Avg Price (PHP/kWh)", 
+                with col4:
+                    st.metric("Avg Price", 
                              f"{s_dict['Avg Price (PHP/kWh)']:,.2f}" if isinstance(s_dict.get('Avg Price (PHP/kWh)'), (int, float)) else "N/A")
             
         with tbl_tabs[1]:
