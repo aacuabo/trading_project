@@ -374,9 +374,9 @@ def show_dashboard():
             col1, col2, col3, col4 = st.columns(4)
             if "Prices" in data.columns and pd.api.types.is_numeric_dtype(data["Prices"]):
                 pv = data["Prices"].dropna();
-                col1.metric("Max Price", f"{pv.max():,.2f}" if not pv.empty else "N/A")
-                col2.metric("Avg Price", f"{pv.mean():,.2f}" if not pv.empty else "N/A")
-                col3.metric("Min Price", f"{pv.min():,.2f}" if not pv.empty else "N/A")
+                col1.metric("Max Price (Php/kWh)", f"{pv.max():,.2f}" if not pv.empty else "N/A")
+                col2.metric("Avg Price (Php/kWh)", f"{pv.mean():,.2f}" if not pv.empty else "N/A")
+                col3.metric("Min Price (Php/kWh)", f"{pv.min():,.2f}" if not pv.empty else "N/A")
             else: [c.warning("Price N/A") for c in [col1, col2, col3]]
     
             max_mq_val_display, max_mq_time_display = "N/A", "N/A"
@@ -388,7 +388,7 @@ def show_dashboard():
                     t_str_display = t_obj_display.strftime("%H:%M") if pd.notna(t_obj_display) and hasattr(t_obj_display, 'strftime') else "N/A"
                     max_mq_val_display = f"{max_mq_val_for_day:,.2f}"
                     max_mq_time_display = f"at {t_str_display}"
-                    col4.metric("Max Total MQ", max_mq_val_display, max_mq_time_display)
+                    col4.metric("Max MQ (kWh)", max_mq_val_display, max_mq_time_display)
                 else: col4.info("MQ all NaN.")
             else: col4.warning("MQ N/A")
 
