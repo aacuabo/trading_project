@@ -423,10 +423,10 @@ def show_dashboard():
                         st.metric("WESM", 
                                   f"{metric_value_wesm:,.2f}" if isinstance(metric_value_wesm, (int, float)) else metric_value_wesm)
                 
-            with row2_col2:
-                metric_value_price = s_dict.get('Avg Price (PHP/kWh)')
-                st.metric("Avg Price", 
-                          f"{metric_value_price:,.2f}" if isinstance(metric_value_price, (int, float)) else metric_value_price)
+                    with row2_col2:
+                        metric_value_price = s_dict.get('Avg Price (PHP/kWh)')
+                        st.metric("Avg Price", 
+                                  f"{metric_value_price:,.2f}" if isinstance(metric_value_price, (int, float)) else metric_value_price)
             
         with tbl_tabs[1]:
             df_display = data.copy(); 
