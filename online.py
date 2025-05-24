@@ -420,7 +420,7 @@ def show_dashboard():
                 chart_tabs = st.tabs(["Energy & Prices", "WESM Balance"])
 
                 with chart_tabs[0]: 
-                    with chart_tabs[0]:
+                    
     # Define which columns to consider for energy and price metrics
                         ep_c = [c for c in ["Total_MQ", "Total_BCQ", "Prices"] if c in melt_cols]
                     
@@ -485,45 +485,102 @@ def show_dashboard():
                             # Inform the user if no MQ, BCQ, or Price data is found at all
                             st.info("No MQ, BCQ or Price data for this chart.")
 
-                with chart_tabs[1]: 
+                with chart_tabs[1]:
+                    # Check if 'WESM' and 'Prices' columns are available in melt_cols (simulating actual check)
                     wesm_available = "WESM" in melt_cols
                     prices_available = "Prices" in melt_cols
                     charts_to_layer = []
-
+                
+                    # Common X-axis definition for consistent hourly display
+                    x_axis_hourly = alt.X("Time:T", timeUnit="hours", title="Hour of Day", axis=alt.Axis(format="%H")) # Format to show only hour
+                
                     if wesm_available:
-                        wesm_d = data[["Time", "WESM"]].dropna(subset=["WESM"])
+                        wesm_d = data[["Time", "WESM"]].copy().dropna(subset=["WESM"]) # Use .copy() to avoid SettingWithCopyWarning
                         if not wesm_d.empty:
-                            ch_wesm = alt.Chart(wesm_d).mark_bar().encode(
-                                x=alt.X("Time:T", title="Time", axis=alt.Axis(format="%H:%M")), 
-                                y=alt.Y("WESM:Q", title="WESM Balance (kWh)", scale=alt.Scale(zero=True)), 
-                                color=alt.condition(alt.datum.WESM < 0, alt.value("#ff9900"), alt.value("#4c78a8")), 
-                                tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), alt.Tooltip("WESM:Q", format=",.2f")]
+                            # Calculate absolute WESM for Y-axis magnitude
+                            # The transform_calculate is applied to the chart using this data
+                            ch_wesm = alt.Chart(wesm_d).transform_calculate(
+                                AbsWESM="abs(datum.WESM)"  # Calculate absolute value of WESM
+                            ).mark_bar(opacity=0.3).encode(
+                                x=x_axis_hourly,
+                                y=alt.Y("AbsWESM:Q", title="WESM Volume (kWh)", axis=alt.Axis(titleColor='#800080')), # Purple title
+                                color=alt.condition(
+                                    alt.datum.WESM > 0,
+                                    alt.value('#4CAF50'),  # Green for positive WESM (Export)
+                                    alt.value('#F44336')   # Red for negative WESM (Import)
+                                ),
+                                tooltip=[
+                                    alt.Tooltip("Time:T", timeUnit="hours", title="Hour", format="%H"), # Show hour
+                                    alt.Tooltip("WESM:Q", format=",.0f", title="WESM (Net)") # Show original WESM value
+                                ]
                             )
                             charts_to_layer.append(ch_wesm)
-                            wt = wesm_d["WESM"].sum(); 
+                            
+                            # Calculate and display daily WESM summary
+                            wt = wesm_d["WESM"].sum()
                             ws = f"Net Import ({abs(wt):,.2f} kWh)" if wt < 0 else (f"Net Export ({wt:,.2f} kWh)" if wt > 0 else "Balanced (0 kWh)")
                             st.info(f"Daily WESM (unscaled): {ws}")
-                        else: st.info("No WESM data for WESM chart.")
+                        else:
+                            st.info("No WESM data for WESM chart.")
                     
                     if prices_available:
-                        prices_d = data[["Time", "Prices"]].dropna(subset=["Prices"])
+                        prices_d = data[["Time", "Prices"]].copy().dropna(subset=["Prices"]) # Use .copy()
                         if not prices_d.empty:
-                            ch_prices_line = alt.Chart(prices_d).mark_line(point=True, color="#E45756").encode( 
-                                x=alt.X("Time:T", title="Time", axis=alt.Axis(format="%H:%M")),
-                                y=alt.Y("Prices:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=True)), 
-                                tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), alt.Tooltip("Prices:Q", format=",.2f")]
+                            ch_prices_line = alt.Chart(prices_d).mark_line(
+                                point=True,
+                                color='green', # Green line for prices
+                                strokeDash=[3,3] # Dashed line style
+                            ).encode(
+                                x=x_axis_hourly,
+                                y=alt.Y("Prices:Q", title="Price (PHP/kWh)",
+                                        axis=alt.Axis(titleColor='green'), # Green title
+                                        scale=alt.Scale(zero=False)), # Scale does not need to start at zero
+                                tooltip=[
+                                    alt.Tooltip("Time:T", timeUnit="hours", title="Hour", format="%H"), # Show hour
+                                    alt.Tooltip("Prices:Q", format=",.2f", title="Price")
+                                ]
                             )
                             charts_to_layer.append(ch_prices_line)
-                        else: st.info("No Price data for Price line chart.")
-
+                        else:
+                            st.info("No Price data for Price line chart.")
+                
                     if len(charts_to_layer) == 2:
-                        combined_wesm_price_chart = alt.layer(*charts_to_layer).resolve_scale(y='independent')
-                        st.altair_chart(combined_wesm_price_chart.properties(title=f"WESM Balance & Prices for {selected_date_str}", height=400).interactive(), use_container_width=True)
+                        combined_wesm_price_chart = alt.layer(*charts_to_layer).resolve_scale(
+                            y='independent' # Independent Y-scales for WESM and Prices
+                        ).properties(
+                            title=f"Hourly WESM Volume & Prices for {selected_date_str}",
+                            height=400
+                        ).configure_axis( # Apply label angle to all axes in the chart
+                            labelAngle=-45
+                        )
+                        # REMOVED .interactive()
+                        st.altair_chart(combined_wesm_price_chart, use_container_width=True)
                     elif len(charts_to_layer) == 1:
-                        title_text = "WESM Hourly Balance" if wesm_available and not prices_available else "Hourly Prices"
-                        st.altair_chart(charts_to_layer[0].properties(title=f"{title_text} for {selected_date_str}", height=400).interactive(), use_container_width=True)
+                        # Determine title for single chart
+                        title_text = ""
+                        if wesm_available and not prices_available:
+                            title_text = "Hourly WESM Volume"
+                        elif prices_available and not wesm_available:
+                            title_text = "Hourly Prices"
+                        
+                        single_chart = charts_to_layer[0].properties(
+                            title=f"{title_text} for {selected_date_str}",
+                            height=400
+                        ).configure_axis( # Apply label angle
+                            labelAngle=-45
+                        )
+                        # REMOVED .interactive()
+                        st.altair_chart(single_chart, use_container_width=True)
                     else:
                         st.info("No WESM or Price data available for this tab.")
+                
+                    # Add expander for WESM chart explanation if WESM chart was potentially created
+                    if wesm_available and any(c.mark == 'bar' for c in charts_to_layer if hasattr(c, 'mark')): # Check if WESM bar chart is in layers
+                        with st.expander("Understanding WESM Values on Chart"):
+                            st.markdown(
+                                "- **Green Bars**: Net Export (Positive WESM values).\n"
+                                "- **Red Bars**: Net Import (Negative WESM values).\n"
+                                "- *Bar height represents the absolute volume of WESM interaction (kWh).*"
             else: st.warning(f"Plotting columns missing/null for {selected_date_str}.")
         else: st.warning("Time column invalid for charts.")
 
