@@ -534,7 +534,7 @@ def show_dashboard():
                                 x=x_axis_hourly,
                                 y=alt.Y("Prices:Q", title="Price (PHP/kWh)",
                                         axis=alt.Axis(titleColor='green'), # Green title
-                                        scale=alt.Scale(zero=False,, domain=[0, 32000])), # Scale does not need to start at zero
+                                        scale=alt.Scale(zero=False, domain=[0, 32000])), # Scale does not need to start at zero
                                 tooltip=[
                                     alt.Tooltip("Time:T", timeUnit="hours", title="Hour", format="%H"), # Show hour
                                     alt.Tooltip("Prices:Q", format=",.2f", title="Price")
