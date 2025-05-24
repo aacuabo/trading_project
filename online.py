@@ -405,21 +405,25 @@ def show_dashboard():
         
             # Display metrics. The CSS above handles the alignment.
             with col1:
+                st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                 metric_value = s_dict.get('Total_MQ (kWh)')
                 st.metric("Total MQ", 
                           f"{metric_value:,.2f}" if isinstance(metric_value, (int, float)) else metric_value)
             
             with col2:
+                st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                 metric_value = s_dict.get('Total_BCQ (kWh)')
                 st.metric("Total BCQ", 
                           f"{metric_value:,.2f}" if isinstance(metric_value, (int, float)) else metric_value)
             
             with col3:
+                st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                 metric_value = s_dict.get('WESM (kWh)')
                 st.metric("WESM", 
                           f"{metric_value:,.2f}" if isinstance(metric_value, (int, float)) else metric_value)
             
             with col4:
+                st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100%;">', unsafe_allow_html=True)
                 metric_value = s_dict.get('Avg Price (PHP/kWh)')
                 st.metric("Avg Price", 
                           f"{metric_value:,.2f}" if isinstance(metric_value, (int, float)) else metric_value)
