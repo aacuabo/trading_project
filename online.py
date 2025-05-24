@@ -448,7 +448,7 @@ def show_dashboard():
                  s_dict["Avg Price (PHP/kWh)"] = "N/A"
             st.dataframe(pd.DataFrame([s_dict]).style.format(precision=2, na_rep="N/A"), use_container_width=True)
 
-        st.subheader("📈 Energy Metrics Over Time (Interactive)")
+    st.subheader("📈 Energy Metrics Over Time (Interactive)")
         if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
             melt_cols = [c for c in ["Total_MQ", "Total_BCQ", "Prices", "WESM"] if c in data and data[c].isnull().sum() < len(data[c])]
 
@@ -566,8 +566,8 @@ def show_dashboard():
                     if interval_mq_unscaled >= 0 and (interval_mq_unscaled > 0.001 or interval_bcq_unscaled > 0.001):
                          can_gen_sankey = True 
         
-        if can_gen_sankey:
-            st.subheader(f"⚡ Energy Flow for Interval ({max_mq_interval_time_str_header} on {selected_date_str})")
+    if can_gen_sankey:
+            st.subheader(f"⚡ Energy Flow Sankey Chart")
             sankey_fig = create_sankey_chart(interval_mq_unscaled, interval_wesm_unscaled, selected_date_str, max_mq_interval_time_str_header)
             if sankey_fig: st.plotly_chart(sankey_fig, use_container_width=True)
         else:
