@@ -345,13 +345,42 @@ def show_dashboard():
         tbl_tabs = st.tabs(["Summary", "Hourly Data", "Daily Summary"])
         with tbl_tabs[0]:
             col1, col2, col3, col4 = st.columns(4)
+            
+            # Custom CSS for center alignment
+            metric_style = """
+            <style>
+                [data-testid="metric-container"] {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    text-align: center;
+                    min-height: 100px;
+                }
+                [data-testid="metric-container"] > div {
+                    width: 100%;
+                }
+                [data-testid="metric-container"] label {
+                    justify-content: center;
+                }
+                [data-testid="stMetricValue"] {
+                    justify-content: center;
+                }
+                [data-testid="stMetricDelta"] {
+                    justify-content: center;
+                }
+            </style>
+            """
+            st.markdown(metric_style, unsafe_allow_html=True)
+        
             if "Prices" in data.columns and pd.api.types.is_numeric_dtype(data["Prices"]):
                 pv = data["Prices"].dropna();
                 col1.metric("Max Price", f"{pv.max():,.2f}" if not pv.empty else "N/A")
                 col2.metric("Avg Price", f"{pv.mean():,.2f}" if not pv.empty else "N/A")
                 col3.metric("Min Price", f"{pv.min():,.2f}" if not pv.empty else "N/A")
-            else: [c.warning("Price N/A") for c in [col1, col2, col3]]
-    
+            else: 
+                [c.warning("Price N/A") for c in [col1, col2, col3]]
+        
             max_mq_val_display, max_mq_time_display = "N/A", "N/A"
             if "Total_MQ" in data.columns and pd.api.types.is_numeric_dtype(data["Total_MQ"]) and not data["Total_MQ"].isnull().all():
                 max_mq_val_for_day = data["Total_MQ"].max(skipna=True)
@@ -362,8 +391,10 @@ def show_dashboard():
                     max_mq_val_display = f"{max_mq_val_for_day:,.2f}"
                     max_mq_time_display = f"at {t_str_display}"
                     col4.metric("Max Total MQ", max_mq_val_display, max_mq_time_display)
-                else: col4.info("MQ all NaN.")
-            else: col4.warning("MQ N/A")
+                else: 
+                    col4.info("MQ all NaN.")
+            else: 
+                col4.warning("MQ N/A")
 
             
         with tbl_tabs[1]:
