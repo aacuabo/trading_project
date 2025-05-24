@@ -341,36 +341,38 @@ def show_dashboard():
             data['WESM'] = pd.NA
             st.warning("Could not calculate WESM as Total_BCQ or Total_MQ is missing or not numeric.")
 
-        st.subheader("Daily Summary Metrics")
-        col1, col2, col3, col4 = st.columns(4)
-        if "Prices" in data.columns and pd.api.types.is_numeric_dtype(data["Prices"]):
-            pv = data["Prices"].dropna();
-            col1.metric("Max Price", f"{pv.max():,.2f}" if not pv.empty else "N/A")
-            col2.metric("Avg Price", f"{pv.mean():,.2f}" if not pv.empty else "N/A")
-            col3.metric("Min Price", f"{pv.min():,.2f}" if not pv.empty else "N/A")
-        else: [c.warning("Price N/A") for c in [col1, col2, col3]]
-
-        max_mq_val_display, max_mq_time_display = "N/A", "N/A"
-        if "Total_MQ" in data.columns and pd.api.types.is_numeric_dtype(data["Total_MQ"]) and not data["Total_MQ"].isnull().all():
-            max_mq_val_for_day = data["Total_MQ"].max(skipna=True)
-            if pd.notna(max_mq_val_for_day):
-                max_mq_idx_for_day_display = data["Total_MQ"].idxmax(skipna=True)
-                t_obj_display = data.loc[max_mq_idx_for_day_display, "Time"]
-                t_str_display = t_obj_display.strftime("%H:%M") if pd.notna(t_obj_display) and hasattr(t_obj_display, 'strftime') else "N/A"
-                max_mq_val_display = f"{max_mq_val_for_day:,.2f}"
-                max_mq_time_display = f"at {t_str_display}"
-                col4.metric("Max Total MQ", max_mq_val_display, max_mq_time_display)
-            else: col4.info("MQ all NaN.")
-        else: col4.warning("MQ N/A")
-
-        st.subheader("Data Tables")
-        tbl_tabs = st.tabs(["Hourly Data", "Daily Summary"])
+        st.subheader("Data Overview")
+        tbl_tabs = st.tabs(["Summary", "Hourly Data", "Daily Summary"])
         with tbl_tabs[0]:
+            col1, col2, col3, col4 = st.columns(4)
+            if "Prices" in data.columns and pd.api.types.is_numeric_dtype(data["Prices"]):
+                pv = data["Prices"].dropna();
+                col1.metric("Max Price", f"{pv.max():,.2f}" if not pv.empty else "N/A")
+                col2.metric("Avg Price", f"{pv.mean():,.2f}" if not pv.empty else "N/A")
+                col3.metric("Min Price", f"{pv.min():,.2f}" if not pv.empty else "N/A")
+            else: [c.warning("Price N/A") for c in [col1, col2, col3]]
+    
+            max_mq_val_display, max_mq_time_display = "N/A", "N/A"
+            if "Total_MQ" in data.columns and pd.api.types.is_numeric_dtype(data["Total_MQ"]) and not data["Total_MQ"].isnull().all():
+                max_mq_val_for_day = data["Total_MQ"].max(skipna=True)
+                if pd.notna(max_mq_val_for_day):
+                    max_mq_idx_for_day_display = data["Total_MQ"].idxmax(skipna=True)
+                    t_obj_display = data.loc[max_mq_idx_for_day_display, "Time"]
+                    t_str_display = t_obj_display.strftime("%H:%M") if pd.notna(t_obj_display) and hasattr(t_obj_display, 'strftime') else "N/A"
+                    max_mq_val_display = f"{max_mq_val_for_day:,.2f}"
+                    max_mq_time_display = f"at {t_str_display}"
+                    col4.metric("Max Total MQ", max_mq_val_display, max_mq_time_display)
+                else: col4.info("MQ all NaN.")
+            else: col4.warning("MQ N/A")
+
+            
+        with tbl_tabs[1]:
             df_display = data.copy(); 
             if 'Time' in df_display and pd.api.types.is_datetime64_any_dtype(df_display['Time']):
                 df_display['Time'] = df_display['Time'].dt.strftime('%H:%M')
             st.dataframe(df_display.style.format(precision=2, na_rep="N/A"),height=300, use_container_width=True)
-        with tbl_tabs[1]:
+        
+        with tbl_tabs[2]:
             s_dict = {}
             for c in ["Total_MQ", "Total_BCQ", "WESM"]:
                 if c in data and pd.api.types.is_numeric_dtype(data[c]):
