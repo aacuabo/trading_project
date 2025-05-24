@@ -419,43 +419,57 @@ def show_dashboard():
                 chart_tabs = st.tabs(["Energy & Prices", "WESM Balance"])
                 with chart_tabs[0]: 
                     ep_c = [c for c in ["Total_MQ", "Total_BCQ", "Prices"] if c in melt_cols]
-                    if ep_c:
-                        melt_ep = data.melt(id_vars=["Time"], value_vars=ep_c, var_name="Metric", value_name="Value").dropna(subset=['Value'])
-                        base_chart = alt.Chart(melt_ep).encode(x=alt.X("Time:T", title="Time", axis=alt.Axis(format="%H:%M")))
-                        
-                        line_charts_energy = alt.Chart(pd.DataFrame()) 
-                        bar_chart_prices = alt.Chart(pd.DataFrame())  
-
-                        energy_metrics = [m for m in ["Total_MQ", "Total_BCQ"] if m in ep_c]
-                        if energy_metrics:
-                            line_charts_energy = base_chart.transform_filter(
-                                alt.FieldOneOfPredicate(field='Metric', oneOf=energy_metrics)
-                            ).mark_line(point=True).encode(
-                                y=alt.Y("Value:Q", title="Energy (kWh)", scale=alt.Scale(zero=True)), 
-                                color=alt.Color("Metric:N", legend=alt.Legend(orient='bottom'), 
-                                                scale=alt.Scale(domain=['Total_MQ', 'Total_BCQ'], range=['#FFC20A', '#1A85FF'])),
-                                tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
-                            )
-
-                        if "Prices" in ep_c:
-                            bar_chart_prices = base_chart.transform_filter(
-                                alt.datum.Metric == "Prices"
-                            ).mark_bar(color="#40B0A6").encode(
-                                y=alt.Y("Value:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=True)), 
-                                tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
-                            )
-                        
-                        if energy_metrics and "Prices" in ep_c:
-                            comb_ch = alt.layer(bar_chart_prices, line_charts_energy).resolve_scale(y='independent')
-                        elif energy_metrics:
-                            comb_ch = line_charts_energy
-                        elif "Prices" in ep_c:
-                            comb_ch = bar_chart_prices
+                        if ep_c:
+                            # Melt the DataFrame to long format for easier Altair plotting
+                            melt_ep = data.melt(id_vars=["Time"], value_vars=ep_c, var_name="Metric", value_name="Value").dropna(subset=['Value'])
+                    
+                            # Initialize empty charts
+                            line_charts_energy = alt.Chart(pd.DataFrame())
+                            bar_chart_prices = alt.Chart(pd.DataFrame())
+                    
+                            # Define energy metrics that are present in the data
+                            energy_metrics = [m for m in ["Total_MQ", "Total_BCQ"] if m in ep_c]
+                    
+                            # Create line charts for energy metrics if they exist
+                            if energy_metrics:
+                                line_charts_energy = alt.Chart(melt_ep).transform_filter(
+                                    alt.FieldOneOfPredicate(field='Metric', oneOf=energy_metrics)
+                                ).mark_line(point=True).encode(
+                                    y=alt.Y("Value:Q", title="Energy (kWh)", scale=alt.Scale(zero=True)),
+                                    color=alt.Color("Metric:N", legend=alt.Legend(orient='bottom'),
+                                                    scale=alt.Scale(domain=['Total_MQ', 'Total_BCQ'], range=['#FFC20A', '#1A85FF'])),
+                                    tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
+                                )
+                    
+                            # Create a bar chart for prices if it exists
+                            if "Prices" in ep_c:
+                                bar_chart_prices = alt.Chart(melt_ep).transform_filter(
+                                    alt.datum.Metric == "Prices"
+                                ).mark_bar(color="#40B0A6").encode(
+                                    y=alt.Y("Value:Q", title="Price (PHP/kWh)", scale=alt.Scale(zero=True)),
+                                    tooltip=[alt.Tooltip("Time:T", format="%Y-%m-%d %H:%M"), "Metric:N", alt.Tooltip("Value:Q", format=",.2f")]
+                                )
+                    
+                            # Combine charts based on what data is available
+                            if energy_metrics and "Prices" in ep_c:
+                                # Layer both energy lines and price bars
+                                comb_ch = alt.layer(bar_chart_prices, line_charts_energy).resolve_scale(y='independent')
+                            elif energy_metrics:
+                                # Only show energy lines
+                                comb_ch = line_charts_energy
+                            elif "Prices" in ep_c:
+                                # Only show price bars
+                                comb_ch = bar_chart_prices
+                            else:
+                                # No relevant data for any chart
+                                comb_ch = alt.Chart(pd.DataFrame()).mark_text(text="No Energy/Price Data for chart.").encode()
+                    
+                            # Display the combined chart with a title and interactivity
+                            st.altair_chart(comb_ch.properties(title=f"Metrics for {st.session_state.selected_date_str}"), use_container_width=True)
                         else:
-                            comb_ch = alt.Chart(pd.DataFrame()).mark_text(text="No Energy/Price Data for chart.").encode()
-                        
-                        st.altair_chart(comb_ch.properties(title=f"Metrics for {selected_date_str}").interactive(), use_container_width=True)
-                    else: st.info("No MQ, BCQ or Price data for this chart.")
+                            # Inform the user if no MQ, BCQ, or Price data is found at all
+                            st.info("No MQ, BCQ or Price data for this chart.")
+
 
                 with chart_tabs[1]: 
                     wesm_available = "WESM" in melt_cols
