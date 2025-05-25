@@ -16,7 +16,7 @@ def authenticate_user():
             and password == st.secrets["auth"]["password"]
         ):
             st.session_state.authenticated = True
-            st.session_state.current_page = "Dashboard" # Set default page after login
+            st.session_state.current_page = "📈 Daily Dashboard" # Set default page after login
             st.success("Login successful!")
             st.rerun() # Re-run the app to update UI
         else:
