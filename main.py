@@ -1,7 +1,7 @@
 import streamlit as st
-from dashboard import show_dashboard
-from about import show_about
-from upload import show_upload
+from daily1 import show_daily
+from range import show_range
+from daily import show_about
 
 def app_content():
     st.title("📊 Daily Energy Trading Dashboard")
@@ -20,13 +20,13 @@ def app_content():
         return
 
     # Navigation
-    page = st.sidebar.selectbox("Navigate", ["📊 Dashboard", "Upload", "ℹ️ About"])
+    page = st.sidebar.selectbox("Navigate", ["📊 Daily Dashboard", "📈 Range Dashboard", "ℹ️ About"])
 
     
-    if page == "📊 Dashboard":
-        show_dashboard()
-    elif page == "Upload":
-        show_upload()
+    if page == "📊 Daily Dashboard":
+        show_daily()
+    elif page == "📈 Range Dashboard":
+        show_range()
     elif page == "ℹ️ About":
         show_about()
 
