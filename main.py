@@ -1,34 +1,30 @@
 import streamlit as st
-from daily import show_daily
-from range import show_range
-from daily import show_about
 
-def app_content():
-    st.title("📊 Daily Energy Trading Dashboard")
+# Login authentication from secrets
+def authenticate():
+    st.title("🔐 Login")
 
-    # Password check
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        if (
+            username == st.secrets["auth"]["username"]
+            and password == st.secrets["auth"]["password"]
+        ):
+            st.session_state.authenticated = True
+            st.experimental_rerun()
+        else:
+            st.error("Invalid credentials")
+
+def main():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
 
     if not st.session_state.authenticated:
-        password = st.text_input("Enter password:", type="password")
-        if password == st.secrets["general"]["password"]:
-            st.session_state.authenticated = True
-            st.experimental_rerun()
-        elif password:
-            st.error("Incorrect password")
-        return
-
-    # Navigation
-    page = st.sidebar.selectbox("Navigate", ["📊 Daily Dashboard", "📈 Range Dashboard", "ℹ️ About"])
-
-    
-    if page == "📊 Daily Dashboard":
-        show_daily()
-    elif page == "📈 Range Dashboard":
-        show_range()
-    elif page == "ℹ️ About":
-        show_about()
+        authenticate()
+    else:
+        # Navigate to the main dashboard
+        st.switch_page("📊 Daily Dashboard.py")
 
 if __name__ == "__main__":
-    app_content()
+    main()
