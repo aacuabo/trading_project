@@ -36,8 +36,8 @@ def main():
 
         # Define your secure pages as a dictionary for easy iteration
         secure_pages = {
-            "Daily DashBoard": dashboard.show_dashboard,
-            "Range DashBoard": reports.show_reports,
+            "📈 Daily Dashboard": dashboard.show_dashboard,
+            "📊 Range Analyses": reports.show_reports,
             # Add more pages here: "Page Name": module.function_name
         }
 
