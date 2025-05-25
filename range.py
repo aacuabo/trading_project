@@ -386,18 +386,7 @@ st.markdown(kpi_alignment_css, unsafe_allow_html=True)
 
 def app_content():
     """Main function to render the Streamlit application content."""
-    st.title("📊 Energy Trading Dashboard") 
-    st.sidebar.header("Navigation")
-    page_options = ["Dashboard", "About"]
-    if 'current_page' not in st.session_state: st.session_state.current_page = "Dashboard"
-    
-    page_key = "nav_radio_main_app" 
-    page = st.sidebar.radio("Go to", page_options, index=page_options.index(st.session_state.current_page), key=page_key)
-    st.session_state.current_page = page 
-    
-    if page == "About":
-        show_about_page()
-    else: 
+    st.title("📊 Daily Energy Trading Dashboard") 
         show_dashboard()
 
 def show_dashboard():
@@ -853,62 +842,6 @@ def show_dashboard():
             else:
                 st.warning("Hour data not available for Average Hourly Sankey.")
 
-
-def show_about_page():
-    """Displays the 'About' page content with information about the dashboard."""
-    st.title("About this Dashboard")
-    
-    st.markdown("""
-    ## Energy Trading Dashboard
-    
-    This interactive dashboard is designed for the analysis and visualization of energy trading data. It presents:
-    - **Average daily metrics** for key performance indicators (KPIs).
-    - **Period totals and overall averages** in the 'Summary' tab.
-    - **Average hourly trends** for MQ, BCQ, WESM, and Prices.
-    - **Raw hourly data** for the selected period.
-    - An **Energy Flow Sankey diagram** visualizing either the total flow for the selected period or the average flow for a typical hour.
-    
-    ### Key Features:
-    
-    1.  **Flexible Data Filtering:**
-        * Select custom date ranges.
-        * Filter by specific days of the week. 
-       
-    2.  **Insightful KPIs & Summaries:**
-        * **Top-Level KPIs:** Average Daily Average Price, Average Daily Minimum Price, Average Daily Maximum Total MQ.
-        * **Summary Tab:** Average Daily Maximum Price, Maximum Hourly Total BCQ (for the period), Sum Total MQ (MWh), Sum Total BCQ (MWh), Total WESM (kWh), and Overall Average Price for the selected period.
-        
-    3.  **Detailed Data Tables:**
-        * **Average Hourly Data:** Mean values for MQ, BCQ, Prices, WESM for each hour, averaged over selected days/range.
-        * **Hourly Data (Selected Range):** All individual hourly records for the selected date range and days of the week.
-        
-    4.  **Dynamic Visualizations:**
-        * **Average Hourly Charts:** Combined line charts for MQ, BCQ, and Prices; and WESM (bars, showing volume) with Prices, both featuring dual y-axes.
-        * **Energy Flow Sankey Diagram:** User can choose to view:
-            * **Total Flow:** Aggregate flow of energy over the entire selected date range and days.
-            * **Average Hourly Flow:** Typical flow for a user-selected hour, averaged across the selected period.
-       
-    ### Key Terms:
-    * **MQ (Metered Quantity):** kWh.
-    * **BCQ (Bilateral Contract Quantity):** kWh.
-    * **WESM (Wholesale Electricity Spot Market)**
-    * **WESM (Calculated) = Total BCQ - Total MQ**
-    
-    ### Understanding the Sankey Diagram:
-    
-    * **Total Flow Sankey:** Illustrates the **total** energy distribution for the entire selected period (filtered by days of the week).
-    * **Average Hourly Flow Sankey:** Illustrates the **average** energy distribution for a specific hour, averaged over the selected period.
-    * **Components:** Sources (Generators, WESM Import), Junction (Supply), Destinations (Loads, WESM Export).
-    
-    ### Data Sources:
-    * `MQ_Hourly`, `BCQ_Hourly`, `Prices_Hourly` from a PostgreSQL database.
-    
-    ### Note on Metrics:
-    Pay attention to whether a metric is an **average** (e.g., top-level KPIs, hourly charts) or a **total** (e.g., 'Summary' tab figures, Total Flow Sankey).
-    """)
-    
-    st.sidebar.markdown("---")
-    st.sidebar.info("Dashboard Version: 1.4.1\nLast Updated: May 18, 2025") # Updated version
 
 # --- MAIN APP EXECUTION ---
 if __name__ == "__main__":
