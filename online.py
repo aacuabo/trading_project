@@ -407,13 +407,26 @@ def show_dashboard():
                 if c in data and pd.api.types.is_numeric_dtype(data[c]):
                     s_dict[f"{c} (kWh)"] = data[c].sum(skipna=True)
                 else:
-                    s_dict[f"{c} (kWh)"] = "N/A"
-            
+                    s_dict[f"{c} (kWh)"] = None  # Use None to apply formatting but show "N/A"
+        
             if "Prices" in data and pd.api.types.is_numeric_dtype(data["Prices"]):
-                 s_dict["Avg Price (PHP/kWh)"] = data["Prices"].mean(skipna=True) if not data["Prices"].dropna().empty else "N/A"
+                s_dict["Avg Price (PHP/kWh)"] = (
+                    data["Prices"].mean(skipna=True)
+                    if not data["Prices"].dropna().empty else None
+                )
             else:
-                 s_dict["Avg Price (PHP/kWh)"] = "N/A"
-            st.dataframe(pd.DataFrame([s_dict]).style.format(precision=2, na_rep="N/A"), use_container_width=True)
+                s_dict["Avg Price (PHP/kWh)"] = None
+        
+            # Build format dict for the summary keys that are numeric
+            format_dict = {
+                key: "{:,.2f}" for key, val in s_dict.items() if isinstance(val, (int, float))
+            }
+        
+            # Display the styled summary
+            st.dataframe(
+                pd.DataFrame([s_dict]).style.format(format_dict, na_rep="N/A"),
+                use_container_width=True
+            )
 
         st.subheader("📈 Energy Metrics Over Time (Interactive)")
         if 'Time' in data.columns and pd.api.types.is_datetime64_any_dtype(data['Time']):
