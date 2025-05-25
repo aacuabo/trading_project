@@ -1,5 +1,5 @@
 import streamlit as st
-from daily1 import show_daily
+from daily import show_daily
 from range import show_range
 from daily import show_about
 
