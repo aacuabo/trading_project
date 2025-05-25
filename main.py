@@ -20,13 +20,14 @@ def app_content():
         return
 
     # Navigation
-    page = st.sidebar.selectbox("Navigate", ["Dashboard", "Upload", "About"])
+    page = st.sidebar.selectbox("Navigate", ["📊 Dashboard", "Upload", "ℹ️ About"])
+
     
-    if page == "Dashboard":
+    if page == "📊 Dashboard":
         show_dashboard()
     elif page == "Upload":
         show_upload()
-    elif page == "About":
+    elif page == "ℹ️ About":
         show_about()
 
 if __name__ == "__main__":
