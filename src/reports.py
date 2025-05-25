@@ -386,7 +386,7 @@ st.markdown(kpi_alignment_css, unsafe_allow_html=True)
 
 def show_reports():
     """Main function to render the Streamlit application content."""
-    st.title("📈 Range Energy Trading Dashboard") 
+    st.title("#📊 Range Energy Trading Analyses") 
     show_dashboard()
 
 def show_dashboard():
