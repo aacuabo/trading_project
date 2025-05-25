@@ -325,16 +325,7 @@ st.markdown(kpi_alignment_css, unsafe_allow_html=True)
 
 def app_content():
     st.title("📊 Daily Energy Trading Dashboard")
-    st.sidebar.header("Navigation")
-    page_options = ["Dashboard", "About"]
-    if 'current_page' not in st.session_state: st.session_state.current_page = "Dashboard"
-    
-    page_key = "nav_radio_authed" 
-    page = st.sidebar.radio("Go to", page_options, index=page_options.index(st.session_state.current_page), key=page_key)
-    st.session_state.current_page = page
-    
-    if page == "About": show_about_page()
-    else: show_dashboard()
+    show_dashboard()
 
 def show_dashboard():
     spacer_left, main_content, spacer_right = st.columns([0.1, 5.8, 0.1]) 
@@ -639,73 +630,9 @@ def show_dashboard():
             st.subheader("⚡ Energy Flow Sankey Chart")
             st.info("Sankey chart not generated. Conditions for the chosen interval not met (e.g., Max MQ is zero, negative, or essential data for the interval is unavailable).")
 
-def show_about_page():
-    st.header("About This Dashboard")
-    st.write("""
-    ### Energy Trading Dashboard V1.7
-    This dashboard provides visualization and analysis of energy trading data.
-    - **Data Source**: Hourly measurements from a PostgreSQL database.
-    - **Metrics**: Metered Quantities (MQ), Bilateral Contract Quantities (BCQ), Prices.
-    - **WESM Balance**: Calculated as `Total_BCQ - Total_MQ` (using unscaled data for general charts).
-    
-    #### Sankey Diagram Specifics:
-    - **Interval**: Shows energy flow for the hourly interval with the highest `Total_MQ` on the selected day.
-    - **Generator Data**: Fetched from `BCQ_Hourly` table. Values for specific generators (FDC, GNPK, PSALM, SEC, TSI, MPI) are **multiplied by 1000** for the Sankey display.
-    - **Load Data**: Fetched from `MQ_Hourly` table (unscaled).
-    - **WESM for Sankey**: Recalculated based on the **scaled** generator total and unscaled MQ for the interval.
-    - **Structure**: Simplified to show direct flows from sources (Scaled Generators, WESM Import) via a central "Max Demand" to sinks (Individual Loads, WESM Export).
-    
-    ### Features
-    - Secure passcode access (passcode configured in `secrets.toml`).
-    - Interactive date selection.
-    - Summary metrics and data tables.
-    - Time-series charts for energy and prices (y-axes start at zero).
-    - WESM balance chart now includes an overlay for prices.
-    - Detailed Sankey diagram for the peak MQ interval with adjusted colors.
-    
-    ### WESM Interpretation (General Charts)
-    - `WESM = Total_BCQ - Total_MQ` (unscaled).
-    - Negative WESM: Net Import. Positive WESM: Net Export.
-    
-    For issues, contact the system administrator.
-    """)
-    st.markdown("---"); st.markdown(f"<p style='text-align: center;'>App Version 1.7 (Passcode from Secrets) | Last Updated: {datetime.now(datetime.now().astimezone().tzinfo).strftime('%Y-%m-%d %H:%M:%S %Z')}</p>", unsafe_allow_html=True)
 
 def main():
-    """Main function to handle passcode and app display."""
-    try:
-        # Attempt to retrieve the passcode from secrets.toml
-        # Assumes you have a section [app_settings] with a key "passcode"
-        CORRECT_PASSCODE = st.secrets["app_settings"]["passcode"]
-    except KeyError:
-        st.error("Passcode not found in secrets.toml. Please ensure `[app_settings]` section with `passcode` key is configured.")
-        st.stop() # Stop the app if passcode is not configured
-    except Exception as e: # Catch any other potential errors loading secrets
-        st.error(f"Error loading passcode from secrets: {e}")
-        st.stop()
-
-
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-
-    if not st.session_state.authenticated:
-        st.title("🔒 Secure Access")
-        password_placeholder = st.empty()
-        # Use a unique key for the text_input to avoid conflicts if this part reruns
-        password_attempt = password_placeholder.text_input("Enter Passcode:", type="password", key="passcode_input_main")
-
-        if password_attempt: # Only check if something was entered
-            if password_attempt == CORRECT_PASSCODE:
-                st.session_state.authenticated = True
-                password_placeholder.empty() 
-                st.rerun() 
-            else:
-                st.error("Incorrect passcode. Please try again.")
-        # Optional: Add a button to explicitly submit passcode if desired,
-        # but text_input triggers a rerun on change by default when not empty.
-    
-    if st.session_state.authenticated:
-        app_content()
+    app_content()
         
 if st.button("Rerun"):
     st.rerun()
