@@ -384,7 +384,7 @@ kpi_alignment_css = """
 st.markdown(kpi_alignment_css, unsafe_allow_html=True)
 
 
-def app_content():
+def show_reports():
     """Main function to render the Streamlit application content."""
     st.title("📊 Daily Energy Trading Dashboard") 
     show_dashboard()
