@@ -328,6 +328,7 @@ def app_content():
     show_dashboard()
 
 def show_dashboard():
+    st.title("📊 Daily Energy Trading Dashboard")
     spacer_left, main_content, spacer_right = st.columns([0.1, 5.8, 0.1]) 
     with main_content:
         available_dates = fetch_available_dates()
