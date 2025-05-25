@@ -12,7 +12,7 @@ def authenticate():
             and password == st.secrets["auth"]["password"]
         ):
             st.session_state.authenticated = True
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("Invalid credentials")
 
