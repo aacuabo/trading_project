@@ -8,7 +8,7 @@ import numpy as np
 from typing import Dict, List, Tuple
 
 # Set Streamlit page configuration
-st.set_page_config(layout="centered", page_title="Energy Trading Dashboard")
+st.set_page_config(layout="centered", page_title="Energy Trading Dashboard") 
 
 # --- DATABASE CONFIGURATION ---
 @st.cache_resource
