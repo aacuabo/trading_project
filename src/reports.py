@@ -384,10 +384,10 @@ kpi_alignment_css = """
 st.markdown(kpi_alignment_css, unsafe_allow_html=True)
 
 
-def show_reports():
+def app_content():
     """Main function to render the Streamlit application content."""
-    st.title("#📊 Range Energy Trading Analyses") 
-    show_dashboard()
+    st.title("📊 Daily Energy Trading Dashboard") 
+        show_dashboard()
 
 def show_dashboard():
     """Displays the main dashboard content including filters, KPIs, tables, and charts."""
