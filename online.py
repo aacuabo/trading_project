@@ -397,6 +397,9 @@ def show_dashboard():
             df_display = data.copy(); 
             if 'Time' in df_display and pd.api.types.is_datetime64_any_dtype(df_display['Time']):
                 df_display['Time'] = df_display['Time'].dt.strftime('%H:%M')
+            format_dict = {
+                    col: '{:,.2f}' for col in df_display.columns if col != 'Time'
+                }
             st.dataframe(df_display.style.format(precision=2, na_rep="N/A"),height=300, use_container_width=True)
         with tbl_tabs[2]:
             s_dict = {}
