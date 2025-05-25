@@ -324,11 +324,11 @@ kpi_alignment_css = """
 st.markdown(kpi_alignment_css, unsafe_allow_html=True)
 
 def app_content():
-    st.title("📊 Daily Energy Trading Dashboard")
+    st.title("📈 Daily Energy Trading Dashboard")
     show_dashboard()
 
 def show_dashboard():
-    st.title("📊 Daily Energy Trading Dashboard")
+    st.title("📈 Daily Energy Trading Dashboard") 
     spacer_left, main_content, spacer_right = st.columns([0.1, 5.8, 0.1]) 
     with main_content:
         available_dates = fetch_available_dates()
