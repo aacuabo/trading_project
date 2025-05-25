@@ -398,7 +398,7 @@ def show_dashboard():
             if 'Time' in df_display and pd.api.types.is_datetime64_any_dtype(df_display['Time']):
                 df_display['Time'] = df_display['Time'].dt.strftime('%H:%M')
             st.dataframe(df_display.style.format(precision=2, na_rep="N/A"),height=300, use_container_width=True)
-        with tbl_tabs[1]:
+        with tbl_tabs[2]:
             s_dict = {}
             for c in ["Total_MQ", "Total_BCQ", "WESM"]:
                 if c in data and pd.api.types.is_numeric_dtype(data[c]):
